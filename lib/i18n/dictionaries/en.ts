@@ -1,0 +1,417 @@
+/**
+ * English dictionary — the reference locale.
+ *
+ * Every string the interface renders lives here rather than inline in a component.
+ * That is what makes a French build a translation job rather than a second
+ * application: `fr.ts` fills in the same keys, `getDictionary()` merges it over
+ * this one, and no component changes.
+ *
+ * The shape of this object *is* the `Dictionary` type — adding a key here makes it
+ * required everywhere, and TypeScript will point at any translation that drifts.
+ */
+export const en = {
+  brand: {
+    name: "Montreal Market Intelligence",
+    shortName: "MTL Market",
+    tagline: "Montreal real estate, understood.",
+    description:
+      "Explore residential prices, rents, inventory and neighbourhood trends across Montreal.",
+  },
+
+  nav: {
+    overview: "Overview",
+    rent: "Rent",
+    buy: "Buy",
+    sell: "Sell",
+    invest: "Invest",
+    neighbourhoods: "Neighbourhoods",
+    compare: "Compare",
+    menu: "Menu",
+    closeMenu: "Close menu",
+  },
+
+  actions: {
+    exploreMarket: "Explore the market",
+    compareNeighbourhoods: "Compare neighbourhoods",
+    viewDashboard: "View dashboard",
+    retry: "Try again",
+    reset: "Reset to defaults",
+    showTable: "Table",
+    showChart: "Chart",
+    viewAll: "View all neighbourhoods",
+    calculate: "Calculate",
+  },
+
+  selector: {
+    label: "Explore",
+    placeholder: "Select a neighbourhood",
+    ariaLabel: "Select a neighbourhood",
+    allNeighbourhoods: "All neighbourhoods",
+  },
+
+  states: {
+    loading: "Loading market data…",
+    error: "We could not load this data.",
+    emptyTitle: "No data for this selection",
+    emptyBody: "There are no records for the filters you have chosen.",
+    noPropertyType: "This neighbourhood has no meaningful stock of this property type.",
+    noPropertyTypeBody:
+      "Rather than estimate a figure, the dashboard leaves it blank. Choose another property type to continue.",
+  },
+
+  provenance: {
+    demoLabel: "Demo data",
+    demoQualifier: "Not live market data",
+    demoExplainer:
+      "Every figure on this platform is generated for demonstration. The numbers are plausible in shape but they are not measurements of the Montreal market, and nothing here should be used to make a housing decision.",
+    sourcePrefix: "Source",
+    updatedPrefix: "Updated",
+    derivedPrefix: "Derived by this platform",
+    methodology: "How this is calculated",
+  },
+
+  propertyTypes: {
+    condo: "Condo",
+    house: "House",
+    plex: "Plex",
+  },
+
+  propertyTypesPlural: {
+    condo: "Condos",
+    house: "Houses",
+    plex: "Plexes",
+  },
+
+  bedroomTypes: {
+    studio: "Studio",
+    oneBedroom: "1 bedroom",
+    twoBedroom: "2 bedrooms",
+    threeBedroom: "3+ bedrooms",
+  },
+
+  bedroomTypesShort: {
+    studio: "Studio",
+    oneBedroom: "1BR",
+    twoBedroom: "2BR",
+    threeBedroom: "3BR+",
+  },
+
+  ranges: {
+    "1y": "1 year",
+    "3y": "3 years",
+    "5y": "5 years",
+  },
+
+  conditions: {
+    buyers: "Buyer's market",
+    balanced: "Balanced market",
+    sellers: "Seller's market",
+    scoreLabel: "Market condition score",
+    scaleLow: "Favours buyers",
+    scaleHigh: "Favours sellers",
+    factorsTitle: "What drives this score",
+    factorLabels: {
+      monthsOfInventory: "Months of inventory",
+      daysOnMarket: "Days on market",
+      listingToSaleRatio: "Sale-to-list ratio",
+      priceMomentum: "Price momentum",
+    },
+    explainer:
+      "Computed from inventory, selling pace, sale-to-list ratio and price momentum. It is a classification of the data, not a forecast.",
+  },
+
+  metrics: {
+    medianCondoPrice: {
+      label: "Median condo price",
+      description: "The midpoint of condominium sale prices in the period.",
+    },
+    medianHousePrice: {
+      label: "Median house price",
+      description: "The midpoint of single-family home sale prices in the period.",
+    },
+    medianPlexPrice: {
+      label: "Median plex price",
+      description: "The midpoint of duplex and triplex sale prices in the period.",
+    },
+    medianPrice: {
+      label: "Median price",
+      description: "The midpoint of sale prices for the selected property type.",
+    },
+    pricePerSqFt: {
+      label: "Price per sq. ft.",
+      description:
+        "Average sale price divided by living area. Useful for comparing unlike properties.",
+    },
+    averageOneBedroomRent: {
+      label: "Average 1-bedroom rent",
+      description: "Mean monthly rent for one-bedroom units.",
+    },
+    averageTwoBedroomRent: {
+      label: "Average 2-bedroom rent",
+      description: "Mean monthly rent for two-bedroom units.",
+    },
+    vacancyRate: {
+      label: "Vacancy rate",
+      description:
+        "Share of rental units sitting empty and available. Below roughly 3% is generally considered a tight market.",
+    },
+    averageDaysOnMarket: {
+      label: "Days on market",
+      description: "Average number of days between listing and sale.",
+    },
+    activeListings: {
+      label: "Active listings",
+      description: "Properties available for sale at the end of the period.",
+    },
+    newListings: {
+      label: "New listings",
+      description: "Properties that came to market during the period.",
+    },
+    salesCount: {
+      label: "Sales volume",
+      description: "Transactions completed during the period.",
+    },
+    listingToSaleRatio: {
+      label: "Sale-to-list ratio",
+      description:
+        "Average sale price as a percentage of asking price. Above 100% means properties generally sold over asking.",
+    },
+    monthsOfInventory: {
+      label: "Months of inventory",
+      description:
+        "How long current inventory would take to sell at the current pace. Under 4 months typically favours sellers.",
+    },
+    averageRent: {
+      label: "Average rent",
+      description: "Mean monthly rent for the selected unit size.",
+    },
+    medianRent: {
+      label: "Median rent",
+      description: "The midpoint of monthly rents for the selected unit size.",
+    },
+    rentChange: {
+      label: "Annual rent change",
+      description: "Change in average rent against the same month one year earlier.",
+    },
+    yoyChange: {
+      label: "Year over year",
+      description: "Change against the same month one year earlier.",
+    },
+    inventory: {
+      label: "Residential inventory",
+      description: "Active listings across all tracked property types.",
+    },
+  },
+
+  home: {
+    heroEyebrow: "Montreal residential market",
+    snapshotTitle: "Market snapshot",
+    snapshotSubtitle: "Montreal-wide, {period}",
+    exploreTitle: "Explore by neighbourhood",
+    exploreSubtitle:
+      "Select an area to see prices, rents, inventory and market condition side by side.",
+    sectionsTitle: "Four ways to read the market",
+    sections: {
+      rent: {
+        title: "Rent",
+        body: "Average and median rents by unit size, vacancy, and how a neighbourhood compares with the city.",
+      },
+      buy: {
+        title: "Buy",
+        body: "Prices, price per square foot, inventory and pace — plus an affordability calculator that does real mortgage math.",
+      },
+      sell: {
+        title: "Sell",
+        body: "The indicators that describe selling conditions, and what each one does and does not tell you.",
+      },
+      invest: {
+        title: "Invest",
+        body: "Yield, cap rate, financing and cash flow, with every assumption visible and adjustable.",
+      },
+    },
+    mapTitle: "Montreal at a glance",
+    mapSubtitle: "Select a neighbourhood to see its headline figures.",
+  },
+
+  rentPage: {
+    title: "Rental market",
+    subtitle:
+      "Rents, vacancy and rental trends by neighbourhood and unit size, measured against the Montreal average.",
+    comparisonTitle: "Against the Montreal average",
+    currentRent: "Current average",
+    montrealAverage: "Montreal average",
+    difference: "Difference",
+    trendTitle: "Rent history",
+    aboveAverage: "above the Montreal average",
+    belowAverage: "below the Montreal average",
+    inLineWithAverage: "in line with the Montreal average",
+  },
+
+  buyPage: {
+    title: "Buying",
+    subtitle:
+      "Prices, inventory and selling pace by property type, with a mortgage and affordability calculator.",
+    marketTitle: "Market conditions",
+    priceHistoryTitle: "Price history",
+    calculatorTitle: "Affordability calculator",
+    calculatorSubtitle:
+      "The market figures on this page are demonstration data. The mortgage math below is real.",
+  },
+
+  sellPage: {
+    title: "Selling",
+    subtitle:
+      "The indicators that describe conditions for sellers in a neighbourhood, and how to read them.",
+    indicatorsTitle: "Neighbourhood indicators",
+    interpretationTitle: "What these indicators suggest",
+    disclaimer:
+      "These are neighbourhood-level measures. They describe the market a property would be listed into — they are not an estimate of what any individual property would sell for.",
+    recentSales: "Recent sales",
+  },
+
+  investPage: {
+    title: "Investment analysis",
+    subtitle:
+      "Yield, cap rate and cash flow for a rental property, computed from your inputs.",
+    inputsTitle: "Property and financing",
+    assumptionsTitle: "Assumptions",
+    assumptionsNote:
+      "These are estimates, not measurements. Change them and every figure below updates.",
+    resultsTitle: "Results",
+    incomeTitle: "Income",
+    expensesTitle: "Operating expenses",
+    financingTitle: "Financing",
+    returnsTitle: "Returns",
+    prefillNote: "Prefilled from {neighbourhood} demo figures. Adjust anything.",
+  },
+
+  comparePage: {
+    title: "Compare neighbourhoods",
+    subtitle: "Put up to four areas side by side on the measures that matter.",
+    addNeighbourhood: "Add neighbourhood",
+    remove: "Remove",
+    limitReached: "You can compare up to four neighbourhoods at a time.",
+    emptyTitle: "Choose neighbourhoods to compare",
+    emptyBody: "Select at least two areas to see them side by side.",
+    metricColumn: "Metric",
+  },
+
+  neighbourhoodsPage: {
+    title: "Neighbourhoods",
+    subtitle: "Every area currently tracked, with its headline figures.",
+    profileTitle: "About this area",
+    dashboardTitle: "Market dashboard",
+    overviewTitle: "Market overview",
+    rentalTitle: "Rental market",
+    priceTrendsTitle: "Price trends",
+    rentTrendsTitle: "Rental trends",
+    activityTitle: "Market activity",
+    conditionTitle: "Market condition",
+    notFoundTitle: "Neighbourhood not found",
+    notFoundBody: "We do not track an area with that name yet.",
+  },
+
+  analyzer: {
+    title: "Property analyzer",
+    badge: "Coming soon",
+    subtitle:
+      "Enter an address and get an assessment, an estimated value, an estimated rent and a yield — once the data sources behind each of those are connected.",
+    inputPlaceholder: "1234 Rue Example, Montréal",
+    disabledNote:
+      "This form is intentionally inactive. Producing a property valuation requires the municipal assessment roll and comparable-sales data, and neither is connected yet. Estimating a number without them would be fabrication, not analysis.",
+    plannedTitle: "What it will report",
+    planned: {
+      assessment: "Municipal assessment",
+      assessmentSource: "Ville de Montréal assessment roll",
+      marketValue: "Estimated market value",
+      marketValueSource: "Comparable sales from a licensed listing feed",
+      rent: "Estimated rent",
+      rentSource: "CMHC rental survey, adjusted for unit size",
+      yield: "Estimated gross yield",
+      yieldSource: "Derived from the two figures above",
+      appreciation: "Neighbourhood appreciation",
+      appreciationSource: "This platform's own price history",
+      comparables: "Comparable properties",
+      comparablesSource: "Licensed listing feed",
+      score: "Investment score",
+      scoreSource: "Derived — weighting published with the score",
+    },
+  },
+
+  dataPage: {
+    title: "Data sources",
+    subtitle:
+      "What is connected, what is planned, and how each figure on this platform is produced.",
+    connected: "Connected",
+    planned: "Planned",
+    statusLabel: "Status",
+    licenceLabel: "Licence",
+    cadenceLabel: "Refresh",
+    lastImport: "Last import",
+    importHistory: "Recent import runs",
+    recordsImported: "records",
+  },
+
+  footer: {
+    builtWith: "Built as a learning project.",
+    dataNote:
+      "All statistics shown are generated demonstration data, not measurements of the Montreal market.",
+    sourcesLink: "Data sources",
+    docsLink: "Documentation",
+  },
+
+  chart: {
+    tableViewLabel: "Data table",
+    periodColumn: "Period",
+    noSeries: "Select at least one series to plot.",
+    legendLabel: "Series",
+  },
+
+  calculator: {
+    purchasePrice: "Purchase price",
+    downPayment: "Down payment",
+    downPaymentPercent: "Down payment (%)",
+    interestRate: "Interest rate",
+    amortization: "Amortization",
+    years: "years",
+    propertyTaxes: "Annual property taxes",
+    condoFees: "Monthly condo fees",
+    insurance: "Annual insurance",
+    utilities: "Monthly utilities and heating",
+    monthlyRent: "Monthly rent",
+    maintenance: "Annual maintenance",
+    vacancyAllowance: "Vacancy allowance",
+    managementFee: "Management fee",
+    closingCosts: "Closing costs",
+    monthlyMortgage: "Estimated monthly mortgage",
+    totalMonthlyCost: "Estimated total monthly cost",
+    insurancePremium: "Mortgage insurance premium",
+    loanAmount: "Amount borrowed",
+    totalInterest: "Total interest over the amortization",
+    qualifyingIncome: "Income a lender would typically want to see",
+    qualifyingIncomeNote:
+      "At a 39% gross debt service ratio. An illustration of the standard test, not a pre-approval.",
+    transferDuty: "Transfer duty (welcome tax)",
+    grossAnnualRent: "Gross annual rent",
+    grossYield: "Gross rental yield",
+    effectiveGrossIncome: "Effective gross income",
+    totalExpenses: "Total annual expenses",
+    netOperatingIncome: "Net operating income",
+    capRate: "Cap rate",
+    monthlyCashFlow: "Monthly cash flow",
+    annualCashFlow: "Annual cash flow",
+    cashOnCash: "Cash-on-cash return",
+    debtServiceCoverage: "Debt service coverage",
+    breakEvenOccupancy: "Break-even occupancy",
+    totalCashInvested: "Total cash invested",
+    semiAnnualNote:
+      "Payments use semi-annual compounding, the Canadian convention for fixed-rate mortgages.",
+  },
+};
+
+/**
+ * The dictionary contract, inferred from the English reference above. Note there
+ * is no `as const`: values widen to `string`, so a translation can supply
+ * different text while the key structure stays enforced.
+ */
+export type Dictionary = typeof en;
