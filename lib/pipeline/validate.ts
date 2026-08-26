@@ -2,6 +2,10 @@ import { z } from "zod";
 import type { BenchmarkObservation } from "@/types/benchmark";
 import { BENCHMARK_SERIES_CODES } from "@/types/benchmark";
 import { isValidIsoDate } from "@/lib/calculations/business-days";
+import type { BoroughPermitStat } from "@/types/civic";
+import { PERMIT_CATEGORIES } from "@/types/civic";
+import { getMunicipality } from "@/lib/geo/montreal";
+import { isValidPeriod } from "@/lib/periods";
 
 /**
  * The validation gate.
@@ -160,4 +164,183 @@ function readDate(candidate: unknown): string | null {
     return typeof value === "string" ? value : null;
   }
   return null;
+}
+
+/* ── Civic statistics: Montréal construction permits ──────────────────────── */
+
+/**
+ * Bounds for a borough-month of permit activity.
+ *
+ * Set to reject **corrupted** data without rejecting **unusual** data, the same
+ * line the yield bounds walk. Montréal's busiest boroughs issue a few hundred
+ * permits a month; 20 000 is far beyond any plausible month and can only mean a
+ * grouping bug or a date column that put a decade into one bucket.
+ *
+ * The declared-value ceiling is deliberately generous. A single large
+ * institutional project can declare hundreds of millions, so the bound is there
+ * to catch a units error (cents reported as dollars), not to second-guess a
+ * real number.
+ */
+export const PERMIT_BOUNDS = {
+  maxPermitsPerBoroughMonth: 20_000,
+  maxDwellingUnitsPerBoroughMonth: 50_000,
+  maxDeclaredValuePerBoroughMonth: 10_000_000_000,
+} as const;
+
+export const permitStatSchema = z.object({
+  boroughCode: z
+    .string()
+    .min(1)
+    .refine(
+      (code) => getMunicipality(code) !== null,
+      "Borough code is not in the Montréal municipality registry.",
+    ),
+  period: z.string().refine(isValidPeriod, "Expected a reporting period in YYYY-MM form."),
+  permitsIssued: z
+    .number()
+    .int("Permit counts are whole numbers.")
+    .min(0, "A permit count cannot be negative.")
+    .max(
+      PERMIT_BOUNDS.maxPermitsPerBoroughMonth,
+      `More than ${PERMIT_BOUNDS.maxPermitsPerBoroughMonth} permits in one borough-month is not a real figure.`,
+    ),
+  dwellingUnitsCreated: z
+    .number()
+    .int()
+    .min(0)
+    .max(PERMIT_BOUNDS.maxDwellingUnitsPerBoroughMonth)
+    .nullable(),
+  declaredWorkValue: z
+    .number()
+    .min(0)
+    .max(PERMIT_BOUNDS.maxDeclaredValuePerBoroughMonth)
+    .nullable(),
+  byCategory: z.record(z.string(), z.number().int().min(0)),
+  dataSourceId: z.string().min(1),
+  retrievedAt: z.string().min(1),
+  dataQuality: z.enum(["live", "demo"]),
+});
+
+/**
+ * Validate a batch of borough-month statistics.
+ *
+ * Returns both halves rather than throwing, matching
+ * `validateBenchmarkObservations`: the ingest service decides what a partial
+ * batch means and needs the rejected rows to explain the decision.
+ *
+ * Two checks the schema cannot express live here:
+ *
+ *  - **The category counts must sum to the permit total.** They are produced by
+ *    the same loop, so a mismatch means the aggregation is wrong — and a
+ *    breakdown that does not add up is worse than no breakdown, because it
+ *    looks authoritative.
+ *  - **`(borough, period)` must be unique.** It is the upsert key. Two rows for
+ *    one key make the write order decide the stored value, which is a silent,
+ *    non-deterministic bug.
+ */
+export function validatePermitStats(stats: unknown[]): {
+  valid: BoroughPermitStat[];
+  rejected: ValidationIssue[];
+} {
+  const valid: BoroughPermitStat[] = [];
+  const rejected: ValidationIssue[] = [];
+  const seen = new Set<string>();
+
+  stats.forEach((candidate, index) => {
+    const parsed = permitStatSchema.safeParse(candidate);
+    if (!parsed.success) {
+      rejected.push({
+        index,
+        observationDate: readPeriod(candidate),
+        message: parsed.error.issues
+          .map((issue) => `${issue.path.join(".") || "value"}: ${issue.message}`)
+          .join("; "),
+      });
+      return;
+    }
+
+    const stat = parsed.data as BoroughPermitStat;
+
+    const categoryTotal = PERMIT_CATEGORIES.reduce(
+      (sum, category) => sum + (stat.byCategory[category] ?? 0),
+      0,
+    );
+    if (categoryTotal !== stat.permitsIssued) {
+      rejected.push({
+        index,
+        observationDate: stat.period,
+        message: `Category counts total ${categoryTotal} but the row reports ${stat.permitsIssued} permits. A breakdown that does not add up is not published.`,
+      });
+      return;
+    }
+
+    const key = `${stat.boroughCode}|${stat.period}`;
+    if (seen.has(key)) {
+      rejected.push({
+        index,
+        observationDate: stat.period,
+        message: `Duplicate row for ${stat.boroughCode} in ${stat.period}. (borough, period) is the upsert key and must be unique within a batch.`,
+      });
+      return;
+    }
+    seen.add(key);
+
+    valid.push(stat);
+  });
+
+  return { valid, rejected };
+}
+
+function readPeriod(candidate: unknown): string | null {
+  if (typeof candidate === "object" && candidate !== null && "period" in candidate) {
+    const period = (candidate as { period: unknown }).period;
+    return typeof period === "string" ? period : null;
+  }
+  return null;
+}
+
+/**
+ * Batch-level sanity check, run after per-row validation.
+ *
+ * Catches faults that are invisible one row at a time. Returns a message when
+ * the batch should be refused wholesale, `null` when it is fine.
+ *
+ * **A period in the future is the one that matters.** Permits are issued, then
+ * published; a batch containing next year cannot be a real extract. It is also
+ * the signature of a misread date column — a `DD/MM` feed parsed as `MM/DD`
+ * turns 25 December into an impossible month, and a year column read from the
+ * wrong position lands in 2031. Refusing the whole batch is right here: the
+ * fault is in the parse, so the rows that happen to look sane are not
+ * trustworthy either.
+ */
+export function detectPermitBatchAnomaly(
+  stats: BoroughPermitStat[],
+  options: { today?: string } = {},
+): string | null {
+  if (stats.length === 0) return null;
+
+  const today = options.today ?? new Date().toISOString().slice(0, 7);
+  // One month of slack: a permit issued on the 30th can be published in an
+  // extract dated the following month without anything being wrong.
+  const horizon = addMonthsToPeriod(today, 1);
+
+  const future = stats.filter((stat) => stat.period > horizon);
+  if (future.length > 0) {
+    const sample = [...new Set(future.map((stat) => stat.period))].sort().slice(0, 5);
+    return `${future.length} of ${stats.length} rows report periods after ${horizon} (e.g. ${sample.join(", ")}). Permits cannot be issued in the future, so the date column is being misread. Nothing was written.`;
+  }
+
+  const total = stats.reduce((sum, stat) => sum + stat.permitsIssued, 0);
+  if (total === 0) {
+    return `The batch contains ${stats.length} borough-month rows but zero permits in total. That is an empty extract, not a month with no construction.`;
+  }
+
+  return null;
+}
+
+/** Local period arithmetic, kept here so validate.ts imports no clock. */
+function addMonthsToPeriod(period: string, delta: number): string {
+  const [year, month] = period.split("-").map(Number);
+  const zeroBased = year * 12 + (month - 1) + delta;
+  return `${Math.floor(zeroBased / 12)}-${String((zeroBased % 12) + 1).padStart(2, "0")}`;
 }

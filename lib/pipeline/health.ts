@@ -45,6 +45,9 @@ export type PipelineState =
   /** Nothing on record at all, and no successful import to explain it. */
   | "unavailable";
 
+/** The cadence a lag is measured in. */
+export type LagUnit = "business-day" | "month";
+
 /** Ranked worst-first, for sorting a dashboard so problems surface at the top. */
 export const PIPELINE_STATE_RANK: Record<PipelineState, number> = {
   failing: 0,
@@ -128,8 +131,19 @@ export interface PipelineHealthInput {
   dataQuality: "demo" | "live";
   /** Freshness of the newest observation, or null when there is nothing to judge. */
   freshness: BenchmarkFreshness | null;
-  businessDayLag: number | null;
-  maxBusinessDayLag: number | null;
+  /**
+   * How far behind the newest observation is, in `lagUnit`.
+   *
+   * Generic rather than "business days" because the engine serves more than one
+   * cadence: a bond yield is late after two business days, a municipal monthly
+   * extract is not late until it is months behind. Encoding the unit in the
+   * data rather than the field name is what lets one health rule serve both.
+   */
+  lag: number | null;
+  /** The allowance, in the same unit. Beyond it, the data is stale. */
+  maxLag: number | null;
+  lagUnit: LagUnit;
+  /** `YYYY-MM-DD` or `YYYY-MM`, whichever the source publishes. */
   latestObservationDate: string | null;
   /** Summary of the run history, from the import-run store. */
   importHealth: ImportHealth;
@@ -160,7 +174,9 @@ export interface PipelineHealthReport {
   severity: SignalSeverity | null;
   dataQuality: "demo" | "live";
   freshness: BenchmarkFreshness | null;
-  businessDayLag: number | null;
+  lag: number | null;
+  maxLag: number | null;
+  lagUnit: LagUnit;
   latestObservationDate: string | null;
   consecutiveFailures: number;
   lastSuccessAt: string | null;
@@ -203,7 +219,9 @@ export function assessPipelineHealth(
     severity: worstSeverity(signals),
     dataQuality: input.dataQuality,
     freshness: input.freshness,
-    businessDayLag: input.businessDayLag,
+    lag: input.lag,
+    maxLag: input.maxLag,
+    lagUnit: input.lagUnit,
     latestObservationDate: input.latestObservationDate,
     consecutiveFailures: input.importHealth.consecutiveFailures,
     lastSuccessAt: input.importHealth.lastSuccessAt,
@@ -304,11 +322,12 @@ function collectSignals(input: PipelineHealthInput): PipelineSignal[] {
     signals.push({
       code: "stale-data",
       severity: "critical",
-      message: `The newest observation is ${input.latestObservationDate ?? "unknown"}, ${input.businessDayLag ?? "?"} business days old — beyond the ${input.maxBusinessDayLag ?? "?"} allowed for this series.`,
+      message: `The newest observation is ${input.latestObservationDate ?? "unknown"}, ${input.lag ?? "?"} ${pluralise(input.lagUnit, input.lag)} old — beyond the ${input.maxLag ?? "?"} allowed for this source.`,
       detail: {
         latestObservationDate: input.latestObservationDate,
-        businessDayLag: input.businessDayLag,
-        maxBusinessDayLag: input.maxBusinessDayLag,
+        lag: input.lag,
+        maxLag: input.maxLag,
+        lagUnit: input.lagUnit,
       },
     });
   }
@@ -345,6 +364,11 @@ export function derivePipelineState(signals: PipelineSignal[]): PipelineState {
   if (has("stale-data")) return "stale";
   if (signals.some((s) => s.severity === "warning")) return "degraded";
   return "healthy";
+}
+
+function pluralise(unit: LagUnit, count: number | null): string {
+  const noun = unit === "business-day" ? "business day" : "month";
+  return count === 1 ? noun : `${noun}s`;
 }
 
 export function worstSeverity(signals: PipelineSignal[]): SignalSeverity | null {

@@ -1,7 +1,20 @@
+import type { DataQuality } from "@/types";
 import { cn } from "@/lib/utils";
 import { copy } from "@/lib/i18n";
 
 export type RateQuality = "demo" | "live";
+
+/**
+ * Narrow a response-level quality flag to the binary this badge shows.
+ *
+ * Anything that is not unambiguously `live` is labelled demo. A `mixed`
+ * response means some part of it is generated, and the badge's job is to keep a
+ * reader from trusting a generated number — so it fails towards the caution,
+ * never away from it.
+ */
+export function toRateQuality(quality: DataQuality | undefined): RateQuality {
+  return quality === "live" ? "live" : "demo";
+}
 
 /**
  * Provenance for a mortgage rate.

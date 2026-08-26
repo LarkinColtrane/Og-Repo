@@ -8,6 +8,8 @@ import type { ImportRunStore } from "./import-run-store";
 import { InMemoryImportRunStore } from "./import-run-store";
 import type { AlertIncidentStore } from "@/lib/pipeline/alerts";
 import { InMemoryAlertIncidentStore } from "@/lib/pipeline/alerts";
+import type { CivicDataRepository } from "./civic-repository";
+import { DemoCivicDataRepository } from "./demo-civic-repository";
 
 export * from "./repository";
 export { DemoMarketDataRepository } from "./demo-repository";
@@ -24,6 +26,9 @@ export {
   PostgresMarketBenchmarkRepository,
   PostgresImportRunStore,
 } from "./postgres-benchmark-repository";
+export * from "./civic-repository";
+export { DemoCivicDataRepository } from "./demo-civic-repository";
+export { PostgresCivicDataRepository } from "./postgres-civic-repository";
 
 /**
  * The one place that decides where data comes from.
@@ -150,6 +155,42 @@ export function setImportRunStore(next: ImportRunStore): void {
 
 export function resetImportRunStore(): void {
   importRunStore = null;
+}
+
+/**
+ * The one place that decides where civic data comes from.
+ *
+ * A fourth factory, matching the fourth repository. Municipal open data has its
+ * own publisher, licence and cadence, and it becomes live on its own day —
+ * which is exactly the point. When the Ville de Montréal connector starts
+ * importing for real, this factory returns a live repository while the other
+ * three still return demo ones, and the API labels each dataset correctly
+ * instead of flipping the whole application to "live".
+ *
+ * ```ts
+ * if (process.env.DATABASE_URL) {
+ *   return new PostgresCivicDataRepository(executeSql);
+ * }
+ * ```
+ *
+ * Until then this returns the generated fallback, which **refuses writes** so an
+ * ingest fails loudly rather than pretending to persist.
+ */
+let civicRepository: CivicDataRepository | null = null;
+
+export function getCivicRepository(): CivicDataRepository {
+  if (!civicRepository) {
+    civicRepository = new DemoCivicDataRepository();
+  }
+  return civicRepository;
+}
+
+export function setCivicRepository(next: CivicDataRepository): void {
+  civicRepository = next;
+}
+
+export function resetCivicRepository(): void {
+  civicRepository = null;
 }
 
 /**

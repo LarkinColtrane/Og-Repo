@@ -1,5 +1,5 @@
 import type { BenchmarkSeriesCode } from "@/types/benchmark";
-import { getBenchmarkRepository, getImportRunStore } from "@/lib/data";
+import { getBenchmarkRepository, getCivicRepository, getImportRunStore } from "@/lib/data";
 import { BankOfCanadaConnector } from "@/lib/pipeline/connectors/bank-of-canada/client";
 import {
   BANK_OF_CANADA_SOURCE_ID,
@@ -10,7 +10,14 @@ import {
   ingestBankOfCanadaSeries,
   type IngestResult,
 } from "@/lib/pipeline/ingest/bank-of-canada";
-import { runPipelineMonitor } from "@/lib/pipeline/monitor";
+import { MontrealOpenDataConnector } from "@/lib/pipeline/connectors/montreal-open-data/client";
+import { MONTREAL_PERMITS } from "@/lib/pipeline/connectors/montreal-open-data/datasets";
+import {
+  CivicIngestFailedError,
+  ingestMontrealPermits,
+  type CivicIngestResult,
+} from "@/lib/pipeline/ingest/montreal-permits";
+import { runPipelineMonitor, type PipelineScope } from "@/lib/pipeline/monitor";
 import { apiError, apiSuccess, withErrorHandling } from "@/lib/api/response";
 import { requireIngestAuth, unprotectedWarning } from "@/lib/api/ingest-auth";
 import { describeValidationError, scheduledIngestSchema } from "@/lib/api/params";
@@ -43,10 +50,19 @@ import { getAttributions } from "@/lib/data";
  *
  * ## No pipeline logic lives here
  *
- * This route calls `ingestBankOfCanadaSeries` — the same function the manual
- * endpoint and the tests call. It contains no fetching, no normalization, no
- * validation and no writes. A second copy of the pipeline behind a scheduler is
- * a second copy to fix when the upstream changes, and the one nobody remembers.
+ * This route calls `ingestBankOfCanadaSeries` and `ingestMontrealPermits` — the
+ * same functions the manual endpoints and the tests call. It contains no
+ * fetching, no normalization, no validation and no writes. A second copy of a
+ * pipeline behind a scheduler is a second copy to fix when the upstream
+ * changes, and the one nobody remembers.
+ *
+ * ## Two pipelines, one call
+ *
+ * `?pipelines=benchmarks,civic` selects which run; both by default. A scheduler
+ * needing different cadences — the bond yield is daily, permits are monthly —
+ * points two cron entries at the same URL with different `pipelines` values
+ * rather than at two endpoints. The monitor is then scoped to whatever actually
+ * ran, so a benchmarks-only execution cannot close an open civic incident.
  *
  * ## Why a failed import still returns 200
  *
@@ -95,42 +111,56 @@ async function handle(request: Request, input: unknown) {
     if (!parsed.success) {
       return apiError("INVALID_REQUEST", describeValidationError(parsed.error));
     }
-    const { series, recent, notify } = parsed.data;
+    const { series, recent, notify, pipelines } = parsed.data;
+    const scopes = pipelines as PipelineScope[];
 
     const seriesCodes = series
       ? ([series] as BenchmarkSeriesCode[])
       : [...SCHEDULED_BENCHMARK_SERIES];
 
-    // Dependencies are constructed once and shared, so a multi-series run reuses
-    // one connector rather than opening a client per series.
-    const dependencies = {
-      connector: new BankOfCanadaConnector(),
-      repository: getBenchmarkRepository(),
-      importRuns: getImportRunStore(),
-    };
-
     const outcomes: SeriesOutcome[] = [];
-    for (const seriesCode of seriesCodes) {
-      // Sequential, not `Promise.all`. Scheduled imports are not latency-
-      // sensitive, and one series failing must not abort the others — nor should
-      // a scheduled job open several simultaneous connections to a public
-      // publisher that is doing us a favour by being free.
-      outcomes.push(await ingestOne(seriesCode, recent, dependencies));
+    const civic: CivicOutcome[] = [];
+
+    if (scopes.includes("benchmarks")) {
+      // Dependencies are constructed once and shared, so a multi-series run
+      // reuses one connector rather than opening a client per series.
+      const dependencies = {
+        connector: new BankOfCanadaConnector(),
+        repository: getBenchmarkRepository(),
+        importRuns: getImportRunStore(),
+      };
+
+      for (const seriesCode of seriesCodes) {
+        // Sequential, not `Promise.all`. Scheduled imports are not latency-
+        // sensitive, one series failing must not abort the others, and a
+        // scheduled job should not open several simultaneous connections to a
+        // public publisher that is doing us a favour by being free.
+        outcomes.push(await ingestOne(seriesCode, recent, dependencies));
+      }
+    }
+
+    if (scopes.includes("civic")) {
+      civic.push(await ingestCivic());
     }
 
     // Monitoring runs whatever happened above, including when every import
     // succeeded: that is what closes an incident and sends the recovery notice.
-    const monitor = await runPipelineMonitor({ notify, seriesCodes });
+    // Scoped to the pipelines that actually ran — assessing one must never
+    // resolve another's incident.
+    const monitor = await runPipelineMonitor({ notify, seriesCodes, scopes });
 
     const warning = unprotectedWarning(request);
-    const ok = outcomes.every((outcome) => outcome.ok);
+    const ok =
+      outcomes.every((outcome) => outcome.ok) && civic.every((outcome) => outcome.ok);
 
     return apiSuccess(
       {
         ok,
         triggeredBy: "schedule" as const,
+        pipelines: scopes,
         window: { recent },
         series: outcomes,
+        civic,
         monitor: {
           overall: monitor.overall,
           reports: monitor.reports,
@@ -190,6 +220,69 @@ function toOutcome(result: IngestResult): Omit<SeriesOutcome, "ok"> {
     recordsSkipped: result.recordsSkipped,
     firstObservationDate: result.firstObservationDate,
     lastObservationDate: result.lastObservationDate,
+    errorKind: result.errorKind,
+    errorMessage: result.errorMessage,
+    durationMs: result.durationMs,
+  };
+}
+
+/* ── Civic ────────────────────────────────────────────────────────────────── */
+
+interface CivicOutcome {
+  datasetCode: string;
+  ok: boolean;
+  status: CivicIngestResult["status"];
+  runId: string;
+  recordsReceived: number;
+  recordsWritten: number;
+  recordsRejected: number;
+  unknownBoroughs: string[];
+  firstPeriod: string | null;
+  lastPeriod: string | null;
+  errorKind: string | null;
+  errorMessage: string | null;
+  durationMs: number;
+}
+
+/**
+ * Run the civic import and flatten both outcomes into the same shape.
+ *
+ * `CivicIngestFailedError` already carries a complete result, so a failure
+ * reports the same fields as a success — counts, run id, timings — and a caller
+ * never has to branch on the shape to find out what happened.
+ */
+async function ingestCivic(): Promise<CivicOutcome> {
+  const dependencies = {
+    connector: new MontrealOpenDataConnector(),
+    repository: getCivicRepository(),
+    importRuns: getImportRunStore(),
+  };
+
+  try {
+    const result = await ingestMontrealPermits(
+      { dataset: MONTREAL_PERMITS, triggeredBy: "schedule" },
+      dependencies,
+    );
+    return { ...toCivicOutcome(result), ok: result.status !== "failed" };
+  } catch (error) {
+    if (error instanceof CivicIngestFailedError) {
+      return { ...toCivicOutcome(error.result), ok: false };
+    }
+    throw error;
+  }
+}
+
+function toCivicOutcome(result: CivicIngestResult): Omit<CivicOutcome, "ok"> {
+  return {
+    datasetCode: result.datasetCode,
+    status: result.status,
+    runId: result.runId,
+    recordsReceived: result.recordsReceived,
+    recordsWritten: result.recordsWritten,
+    recordsRejected: result.recordsRejected,
+    unknownBoroughs: result.unknownBoroughs,
+    firstPeriod: result.firstPeriod,
+    lastPeriod: result.lastPeriod,
     errorKind: result.errorKind,
     errorMessage: result.errorMessage,
     durationMs: result.durationMs,

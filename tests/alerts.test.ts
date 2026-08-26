@@ -35,8 +35,9 @@ function report(overrides: Partial<PipelineHealthInput> = {}) {
     label: "5Y GoC bond yield",
     dataQuality: "live",
     freshness: "live",
-    businessDayLag: 1,
-    maxBusinessDayLag: 2,
+    lag: 1,
+    maxLag: 2,
+    lagUnit: "business-day",
     latestObservationDate: "2026-08-25",
     importHealth: importHealth(),
     lastRun: null,
@@ -55,7 +56,7 @@ const failing = () =>
   });
 
 const stale = () =>
-  report({ freshness: "stale", businessDayLag: 9, latestObservationDate: "2026-08-13" });
+  report({ freshness: "stale", lag: 9, latestObservationDate: "2026-08-13" });
 
 const clock = (iso: string) => () => new Date(iso);
 
@@ -285,7 +286,7 @@ describe("deduplication", () => {
     const store = new InMemoryAlertIncidentStore();
     const both = report({
       freshness: "stale",
-      businessDayLag: 9,
+      lag: 9,
       importHealth: importHealth({
         consecutiveFailures: 3,
         lastFailureMessage: "HTTP 503",

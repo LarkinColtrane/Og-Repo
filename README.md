@@ -88,6 +88,19 @@ they charge — the page says so, the database says so in a table comment, and t
 two data streams share no storage. The spread between them is derived on render,
 never stored. See [`docs/BANK_OF_CANADA.md`](./docs/BANK_OF_CANADA.md).
 
+A second real pipeline reads **Ville de Montréal construction permits** from the
+city's open-data portal and aggregates them to borough-month totals — the supply
+side of a market this platform otherwise describes only through prices and rents.
+A borough is not a neighbourhood, and the pipeline is careful about that:
+Griffintown and Saint-Henri are both inside Le Sud-Ouest, so a Sud-Ouest figure
+appears under both, labelled as a Sud-Ouest figure, with a note naming what else
+is in it. [`docs/REAL_DATA_PIPELINE.md`](./docs/REAL_DATA_PIPELINE.md) follows one
+number from the portal to the page.
+
+Running the pipelines unattended — shared-secret auth, a provider-neutral
+scheduler endpoint, health states and vendor-neutral alerting — is in
+[`docs/AUTOMATION.md`](./docs/AUTOMATION.md).
+
 **It does not draw a map it does not have.** With no boundary dataset connected,
 the market map renders a labelled schematic grid and says what it is. The GeoJSON
 rendering path is implemented and waiting
@@ -124,7 +137,8 @@ app/                          Routes (Next.js App Router)
 │   ├── neighbourhoods/       GET list, [slug], [slug]/rent, [slug]/sales
 │   ├── mortgage/             GET lenders, rates, compare
 │   ├── market/benchmarks/    GET bond yield history + freshness
-│   ├── internal/market-data/ POST ingest · GET|POST scheduled run · GET diagnostics
+│   ├── civic/permits/        GET borough building activity
+│   ├── internal/market-data/ POST ingest (×2) · GET|POST scheduled run · GET diagnostics
 │   ├── compare/              GET side-by-side comparison
 │   └── data-sources/         GET provenance registry
 ├── (routes)/                 rent · buy · sell · invest · compare · neighbourhoods
@@ -179,8 +193,8 @@ types/                        Shared TypeScript contracts
 tests/                        node:test suites — connector, transform, validate,
                               persistence, ingest, calculations, API
 docs/                         DATA_PIPELINE.md · MORTGAGE_RATE_PIPELINE.md
-                              BANK_OF_CANADA.md · AUTOMATION.md
-                              DATABASE_SCHEMA.md · sql/
+                              BANK_OF_CANADA.md · REAL_DATA_PIPELINE.md
+                              AUTOMATION.md · DATABASE_SCHEMA.md · sql/
 ```
 
 ---
@@ -221,6 +235,7 @@ curl "localhost:3000/api/compare?slugs=plateau-mont-royal,verdun,villeray"
 curl "localhost:3000/api/mortgage/rates?productType=fixed&termYears=5"
 curl "localhost:3000/api/mortgage/compare?price=725000&downPaymentPercent=20&occupancy=investment&units=3"
 curl "localhost:3000/api/market/benchmarks?series=5y-canada-bond&range=1y"
+curl "localhost:3000/api/civic/permits?neighbourhood=griffintown&months=24"
 curl -H "Authorization: Bearer $MARKET_INGEST_SECRET" \
   "localhost:3000/api/internal/market-data/status"
 ```
@@ -295,7 +310,9 @@ Errors use `{ "error": { "code", "message" } }` with a matching HTTP status.
 | `GET /api/mortgage/rates` | `productType`, `termYears`, `lenderId`, `borrowerProfile` |
 | `GET /api/mortgage/compare` | `price`, `downPaymentPercent`, `occupancy`, `units`, `termYears`, `amortizationYears`, `productType` |
 | `GET /api/market/benchmarks` | `series` (`5y-canada-bond`), `range` (`3m`/`1y`/`3y`/`5y`) |
+| `GET /api/civic/permits` | `neighbourhood` or `borough`, `months`, or `from`/`to` |
 | `POST /api/internal/market-data/bank-of-canada` 🔒 | Body: `series`, and either `startDate`+`endDate` or `recent` |
+| `POST /api/internal/market-data/montreal-permits` 🔒 | Body: `from`, `to`, `maxRecords` — all optional |
 | `GET POST /api/internal/market-data/scheduled` 🔒 | `series`, `recent` (default `10`), `notify` — all optional |
 | `GET /api/internal/market-data/status` 🔒 | — (pipeline diagnostics) |
 

@@ -1,5 +1,13 @@
 import { NextResponse } from "next/server";
-import type { ApiErrorBody, ApiErrorCode, ApiMeta, ApiResponse, Attribution } from "@/types";
+import type {
+  ApiErrorBody,
+  ApiErrorCode,
+  ApiMeta,
+  ApiResponse,
+  Attribution,
+  DataQuality,
+  DatasetQuality,
+} from "@/types";
 import { getRepository } from "@/lib/data";
 
 /**
@@ -26,8 +34,34 @@ export interface SuccessOptions {
    * the two will not become live on the same day. Without this, a route serving
    * live rates would still announce itself as demo because the market data
    * happened to be.
+   *
+   * Ignored when `datasets` is supplied — there, the overall flag is derived.
    */
   dataQuality?: "demo" | "live";
+  /**
+   * Per-dataset quality, for responses carrying more than one kind of data.
+   *
+   * Supplying this derives `meta.dataQuality` instead of taking it: `live` only
+   * if every dataset is live, `demo` if none is, `mixed` otherwise. Deriving it
+   * rather than accepting it is what makes the guarantee hold — a route cannot
+   * declare a mixed response "live" by passing the wrong argument.
+   */
+  datasets?: DatasetQuality[];
+}
+
+/**
+ * Collapse per-dataset quality into one conservative flag.
+ *
+ * Exported so the tests can state the rule directly, and so a server component
+ * assembling a page from several repositories can apply the same logic the API
+ * does rather than inventing its own.
+ */
+export function combineDataQuality(datasets: DatasetQuality[]): DataQuality {
+  if (datasets.length === 0) return "demo";
+  const live = datasets.filter((entry) => entry.quality === "live").length;
+  if (live === 0) return "demo";
+  if (live === datasets.length) return "live";
+  return "mixed";
 }
 
 export function apiSuccess<T>(
@@ -36,7 +70,10 @@ export function apiSuccess<T>(
 ): NextResponse<ApiResponse<T>> {
   const meta: ApiMeta = {
     generatedAt: new Date().toISOString(),
-    dataQuality: options.dataQuality ?? getRepository().dataQuality,
+    dataQuality: options.datasets
+      ? combineDataQuality(options.datasets)
+      : (options.dataQuality ?? getRepository().dataQuality),
+    ...(options.datasets ? { datasets: options.datasets } : {}),
     period: options.period,
     sources: options.sources,
   };

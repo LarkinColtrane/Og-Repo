@@ -21,7 +21,7 @@ import { DownPaymentComparison, type DownPaymentOption } from "./down-payment-co
 import { LenderComparisonPanel } from "./lender-comparison";
 import { FinancingMatrixPanel } from "./financing-matrix";
 import { InvestmentResults } from "./investment-results";
-import { RateDataNotice } from "./rate-badge";
+import { RateDataNotice, toRateQuality } from "./rate-badge";
 import { BenchmarkPanel } from "./benchmark-panel";
 import {
   createFormState,
@@ -235,7 +235,7 @@ export function FinancingWorkspace({
   return (
     <Stack>
       <RateDataNotice
-        quality={ratesResource.meta?.dataQuality ?? "demo"}
+        quality={toRateQuality(ratesResource.meta?.dataQuality)}
         effectiveDate={ratesResource.meta?.period}
       />
 

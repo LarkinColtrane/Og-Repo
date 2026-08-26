@@ -48,8 +48,9 @@ const input = (overrides: Partial<PipelineHealthInput> = {}): PipelineHealthInpu
   label: "5Y GoC bond yield",
   dataQuality: "live",
   freshness: "live",
-  businessDayLag: 1,
-  maxBusinessDayLag: 2,
+  lag: 1,
+  maxLag: 2,
+  lagUnit: "business-day",
   latestObservationDate: "2026-08-25",
   importHealth: health(),
   lastRun: run(),
@@ -172,7 +173,7 @@ describe("pipeline states", () => {
   it("stale: imports succeeding but the data has stopped moving", () => {
     const report = assess({
       freshness: "stale",
-      businessDayLag: 9,
+      lag: 9,
       latestObservationDate: "2026-08-13",
     });
     assert.equal(report.state, "stale");
@@ -184,7 +185,7 @@ describe("pipeline states", () => {
   it("failing outranks stale, because the broken import is the thing to fix", () => {
     const report = assess({
       freshness: "stale",
-      businessDayLag: 9,
+      lag: 9,
       importHealth: health({ consecutiveFailures: 4, lastFailureMessage: "HTTP 500" }),
     });
     assert.equal(report.state, "failing");
@@ -195,7 +196,7 @@ describe("pipeline states", () => {
   });
 
   it("demo: a generated series is never healthy, stale or failing", () => {
-    const report = assess({ dataQuality: "demo", freshness: "demo", businessDayLag: null });
+    const report = assess({ dataQuality: "demo", freshness: "demo", lag: null });
     assert.equal(report.state, "demo");
     assert.equal(report.severity, "info", "demo data does not alert");
   });
@@ -212,7 +213,7 @@ describe("pipeline states", () => {
   it("unavailable: no observations and no successful import, ever", () => {
     const report = assess({
       freshness: "unavailable",
-      businessDayLag: null,
+      lag: null,
       latestObservationDate: null,
       importHealth: health({ lastSuccessAt: null, totalRuns: 0, lastSuccessRecordsWritten: null }),
       lastRun: null,

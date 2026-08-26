@@ -74,7 +74,7 @@ export const DATA_SOURCES: DataSource[] = [
     status: "planned",
     licence: "Creative Commons Attribution 4.0",
     description:
-      "Borough boundaries (GeoJSON), property assessment roll, building permits and dwelling counts. The boundary dataset is what the market map is waiting on.",
+      "The portal as a whole: borough boundaries (GeoJSON), the property assessment roll and dwelling counts. Construction permits are tracked separately as their own source, because a source entry that covers a whole portal cannot honestly report whether any one dataset is connected. The boundary dataset is what the market map is waiting on.",
     refreshCadence: "irregular",
   },
   {
@@ -163,6 +163,38 @@ export const DATA_SOURCES: DataSource[] = [
     description:
       "A generated stand-in for the Government of Canada bond yield series, used when no database is connected. Deliberately attributed to itself rather than to the Bank of Canada — these numbers were never published by anyone.",
     refreshCadence: "daily",
+  },
+  {
+    id: "src-montreal-permits",
+    name: "Ville de Montréal construction permits",
+    sourceType: "open-data",
+    url: "https://donnees.montreal.ca/dataset/permis-construction",
+    // Set by a successful import run; null until one has happened in this
+    // deployment. The connector, schema contract, normalizer, validator,
+    // repository and API are built — see docs/REAL_DATA_PIPELINE.md — and this
+    // flips the moment an import succeeds against the live portal.
+    lastUpdated: null,
+    // `planned`, not `active`: the pipeline exists but has never run against the
+    // portal, because outbound access to donnees.montreal.ca is blocked in the
+    // environment this was built in. Marking it active would imply a connection
+    // that has never been made.
+    status: "planned",
+    licence: "Creative Commons Attribution 4.0",
+    description:
+      "Construction, renovation and demolition permits issued by the Ville de Montréal, aggregated to borough-month totals. The supply side of a market this platform otherwise describes only through prices and rents. A permit is authorisation to build, not a completed dwelling.",
+    refreshCadence: "monthly",
+  },
+  {
+    id: "src-demo-permits",
+    name: "Demo construction permits",
+    sourceType: "demo",
+    url: "/docs/REAL_DATA_PIPELINE.md",
+    lastUpdated: null,
+    status: "active",
+    licence: null,
+    description:
+      "A generated stand-in for the Ville de Montréal permit series, used until the real connector has imported. Deliberately attributed to itself rather than to the city — these counts were never published by anyone.",
+    refreshCadence: "monthly",
   },
   {
     id: "src-derived-metrics",

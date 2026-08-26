@@ -1,5 +1,6 @@
 import type { Lender, MortgageRate } from "@/types/mortgage";
 import type { BenchmarkSeriesPayload } from "@/types/benchmark";
+import type { BoroughPermitStat, CityPermitSummary, BoroughAttribution } from "@/types/civic";
 import type {
   ApiErrorBody,
   ApiErrorCode,
@@ -124,4 +125,33 @@ export const api = {
     params: { series?: string; range?: string } = {},
     signal?: AbortSignal,
   ) => fetchApi<BenchmarkSeriesPayload>(`/api/market/benchmarks${query(params)}`, signal),
+
+  /**
+   * Construction permit activity, by borough-month.
+   *
+   * Passing `neighbourhood` returns the statistics for the borough that
+   * neighbourhood sits in, together with an `attribution` object saying so. The
+   * caption is composed server-side from the coverage recorded in the geography
+   * layer, so a component renders it rather than writing it — which is what
+   * stops a borough number ever appearing under a neighbourhood name.
+   */
+  permits: (
+    params: {
+      neighbourhood?: string;
+      borough?: string;
+      months?: number;
+      from?: string;
+      to?: string;
+    } = {},
+    signal?: AbortSignal,
+  ) => fetchApi<PermitsPayload>(`/api/civic/permits${query(params)}`, signal),
 };
+
+export interface PermitsPayload {
+  boroughCode: string | null;
+  boroughName: string | null;
+  observations: BoroughPermitStat[];
+  city: CityPermitSummary[];
+  latestPeriod: string | null;
+  attribution: BoroughAttribution | null;
+}

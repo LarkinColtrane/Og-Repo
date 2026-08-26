@@ -15,6 +15,8 @@ import { MarketConditionGauge } from "@/components/dashboard/market-condition-ga
 import { PriceTrends } from "@/components/dashboard/price-trends";
 import { RentTrends } from "@/components/dashboard/rent-trends";
 import { NeighbourhoodSelector } from "@/components/layout/neighbourhood-selector";
+import { BuildingActivity } from "@/components/civic/building-activity";
+import { getBoroughLink } from "@/lib/geo/montreal";
 
 /** Pre-render every tracked neighbourhood at build time. */
 export async function generateStaticParams() {
@@ -103,6 +105,16 @@ export default async function NeighbourhoodDashboard({
         <RentTrends slug={slug} />
 
         <MarketActivity snapshot={snapshot} />
+
+        {/* Supply. Every other statistic on this page describes demand — what
+            things cost and how fast they move — and a market view without the
+            building side is half a picture.
+
+            Rendered only for neighbourhoods with an explicit borough link. An
+            unmapped neighbourhood gets nothing rather than a guessed borough:
+            the gap is visible and fixable, where a wrong attribution would not
+            be. */}
+        {getBoroughLink(slug) ? <BuildingActivity neighbourhoodSlug={slug} /> : null}
 
         <MarketConditionGauge condition={snapshot.condition} />
       </Stack>

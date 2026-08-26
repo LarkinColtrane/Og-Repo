@@ -1,6 +1,13 @@
 import type { Metadata } from "next";
 import type { DataSource, ImportRunStatus } from "@/types";
-import { getRepository } from "@/lib/data";
+import {
+  getBenchmarkRepository,
+  getCivicRepository,
+  getImportRunStore,
+  getMortgageRateRepository,
+  getRepository,
+} from "@/lib/data";
+import { runPipelineMonitor } from "@/lib/pipeline/monitor";
 import { copy } from "@/lib/i18n";
 import { formatUpdatedAt } from "@/lib/periods";
 import { formatNumber } from "@/lib/calculations/format";
@@ -9,11 +16,21 @@ import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { Card, CardBody, CardHeader } from "@/components/ui/card";
 import { Table, TableWrapper, Td, Th } from "@/components/ui/data-table";
 import { DemoDataNotice } from "@/components/data/source-badge";
+import { PipelineStatusPanel } from "@/components/data/pipeline-status";
 
 export const metadata: Metadata = {
   title: copy.dataPage.title,
   description: copy.dataPage.subtitle,
 };
+
+/**
+ * Rendered per request, never at build time.
+ *
+ * An operations dashboard baked into a static build would report the health of
+ * a pipeline as it stood the day the site was compiled — which is worse than no
+ * dashboard, because it looks current.
+ */
+export const dynamic = "force-dynamic";
 
 const STATUS_TONE: Record<DataSource["status"], BadgeTone> = {
   active: "good",
@@ -38,13 +55,44 @@ const RUN_TONE: Record<ImportRunStatus, BadgeTone> = {
  */
 export default async function DataSourcesPage() {
   const repository = getRepository();
-  const [sources, importRuns] = await Promise.all([
+  const benchmarks = getBenchmarkRepository();
+  const rates = getMortgageRateRepository();
+  const civic = getCivicRepository();
+  const runStore = getImportRunStore();
+
+  const [sources, demoRuns, monitor, realRuns] = await Promise.all([
     repository.listDataSources(),
     repository.listImportRuns(),
+    // `notify: false` — this is a dashboard read, not a monitoring execution.
+    // Rendering a page must never send an alert, or every refresh would page
+    // somebody.
+    runPipelineMonitor({ notify: false }),
+    runStore.listRuns(undefined, 25),
   ]);
 
   const connected = sources.filter((source) => source.status !== "planned");
   const planned = sources.filter((source) => source.status === "planned");
+
+  /**
+   * Per-dataset quality.
+   *
+   * Four repositories, four independent flags. This table is the visible form
+   * of the rule in `types/api.ts`: one live dataset must never make the others
+   * look verified, so each is reported on its own row rather than collapsed
+   * into a single site-wide claim.
+   */
+  const datasets = [
+    { label: "Market statistics (prices, rents)", quality: repository.dataQuality, store: repository.name },
+    { label: "Mortgage rates", quality: rates.dataQuality, store: rates.name },
+    { label: "Market benchmarks (bond yields)", quality: benchmarks.dataQuality, store: benchmarks.name },
+    { label: "Civic data (construction permits)", quality: civic.dataQuality, store: civic.name },
+  ];
+
+  // Runs the pipeline actually recorded in this process, kept apart from the
+  // generator's sample rows. Merging them would let a fabricated success sit in
+  // the same table as a real failure with nothing to tell them apart.
+  const importRuns = realRuns.length > 0 ? realRuns : demoRuns;
+  const runsAreReal = realRuns.length > 0;
 
   return (
     <Container className="py-10 sm:py-12">
@@ -57,6 +105,52 @@ export default async function DataSourcesPage() {
 
         <DemoDataNotice />
 
+        <PipelineStatusPanel
+          reports={monitor.reports}
+          overall={monitor.overall}
+          storeNames={[
+            { label: "Market statistics", name: repository.name },
+            { label: "Mortgage rates", name: rates.name },
+            { label: "Market benchmarks", name: benchmarks.name },
+            { label: "Civic data", name: civic.name },
+            { label: "Import audit trail", name: runStore.name },
+            { label: "Alert incidents", name: monitor.alerting.incidentStore },
+          ]}
+        />
+
+        <Card>
+          <CardHeader
+            title="Data quality by dataset"
+            description="Each dataset has its own backing store and becomes live on its own day. A single connected source never relabels the rest — which is why this is a table and not one badge."
+          />
+          <CardBody>
+            <TableWrapper label="Data quality by dataset">
+              <Table>
+                <thead>
+                  <tr>
+                    <Th sticky>Dataset</Th>
+                    <Th>Quality</Th>
+                    <Th>Backing store</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {datasets.map((dataset) => (
+                    <tr key={dataset.label}>
+                      <Td sticky>{dataset.label}</Td>
+                      <Td>
+                        <Badge tone={dataset.quality === "live" ? "good" : "warning"}>
+                          {dataset.quality === "live" ? "Live" : "Demo"}
+                        </Badge>
+                      </Td>
+                      <Td>{dataset.store}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </TableWrapper>
+          </CardBody>
+        </Card>
+
         <Section title={copy.dataPage.connected}>
           <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2">
             {connected.map((source) => (
@@ -67,7 +161,7 @@ export default async function DataSourcesPage() {
 
         <Section
           title={copy.dataPage.planned}
-          description="Identified integrations. Each has a connector shape defined in docs/DATA_PIPELINE.md but no live connection."
+          description="Identified integrations that are NOT importing. Some have a complete pipeline written and tested — the Ville de Montréal permits connector does — and are still listed here, because a pipeline that has never run against its publisher is not a connection. None of these contributes a single number to this site."
         >
           <div className="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-2">
             {planned.map((source) => (
@@ -79,7 +173,16 @@ export default async function DataSourcesPage() {
         <Card>
           <CardHeader
             title={copy.dataPage.importHistory}
-            description="Every import writes a row here — the audit trail an automated pipeline needs. These runs are from the demo generator."
+            description={
+              runsAreReal
+                ? "Every import writes a row here, success or failure. These are real runs recorded by the pipeline in this process — the in-memory audit trail does not survive a restart, which is stated rather than hidden."
+                : "Every import writes a row here — the audit trail an automated pipeline needs. No real import has run in this process yet, so these are sample rows from the demo generator."
+            }
+            actions={
+              <Badge tone={runsAreReal ? "good" : "neutral"}>
+                {runsAreReal ? "Recorded runs" : "Sample rows"}
+              </Badge>
+            }
           />
           <CardBody>
             <TableWrapper label={copy.dataPage.importHistory}>

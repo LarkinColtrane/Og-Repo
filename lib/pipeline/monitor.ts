@@ -7,8 +7,11 @@ import { getBenchmarkSnapshot } from "@/lib/data/benchmark-service";
 import {
   getAlertIncidentStore,
   getBenchmarkRepository,
+  getCivicRepository,
   getImportRunStore,
 } from "@/lib/data";
+import { MONTREAL_PERMITS } from "@/lib/pipeline/connectors/montreal-open-data/datasets";
+import { assessPeriodFreshness, currentPeriod } from "@/lib/calculations/civic";
 import type { ImportRun } from "@/types";
 import {
   assessPipelineHealth,
@@ -44,7 +47,20 @@ import {
  * dashboard in read-only mode — see `notify: false`.
  */
 
+/** The pipelines the monitor knows how to assess. */
+export type PipelineScope = "benchmarks" | "civic";
+
+export const ALL_PIPELINE_SCOPES: readonly PipelineScope[] = ["benchmarks", "civic"];
+
 export interface PipelineMonitorOptions {
+  /**
+   * Which pipelines to assess. Defaults to all of them.
+   *
+   * Narrowing this is how a scheduler that ran only one import avoids closing
+   * the other's incidents — `evaluatePipelineAlerts` only considers pipelines
+   * present in the reports it is given.
+   */
+  scopes?: readonly PipelineScope[];
   /** Which benchmark series to assess. Defaults to the scheduled ones. */
   seriesCodes?: readonly BenchmarkSeriesCode[];
   /** When false, health is assessed and nothing is sent. For dashboards. */
@@ -106,8 +122,9 @@ export async function collectBenchmarkHealth(
           label: series.shortLabel,
           dataQuality: repository.dataQuality,
           freshness: snapshot.freshness,
-          businessDayLag: snapshot.businessDayLag,
-          maxBusinessDayLag: series.maxBusinessDayLag,
+          lag: snapshot.businessDayLag,
+          maxLag: series.maxBusinessDayLag,
+          lagUnit: "business-day",
           latestObservationDate: snapshot.latest?.observationDate ?? null,
           importHealth,
           lastRun: toRunSummary(mostRecentCompleted(runs)),
@@ -133,7 +150,14 @@ export async function runPipelineMonitor(
   const providers = options.providers ?? getAlertProviders();
   const repeatAfterSeconds = options.repeatAfterSeconds ?? repeatAfterSecondsFromEnv();
 
-  const reports = await collectBenchmarkHealth(options.seriesCodes, { now: options.now });
+  const scopes = options.scopes ?? ALL_PIPELINE_SCOPES;
+  const reports: PipelineHealthReport[] = [];
+  if (scopes.includes("benchmarks")) {
+    reports.push(...(await collectBenchmarkHealth(options.seriesCodes, { now: options.now })));
+  }
+  if (scopes.includes("civic")) {
+    reports.push(...(await collectCivicHealth({ now: options.now })));
+  }
 
   if (!notify) {
     return {
@@ -184,4 +208,50 @@ function deduplicationWarning(store: AlertIncidentStore): string | null {
   return store.durable
     ? null
     : "Open incidents are held in process memory. On a host that runs each scheduled execution in a fresh process, every evaluation will look like a new incident and re-notify. Back this with a database before relying on deduplication.";
+}
+
+/**
+ * Assess the civic pipeline.
+ *
+ * Structurally identical to `collectBenchmarkHealth` — read freshness from the
+ * repository, read run outcomes from the import store, hand both to the same
+ * pure engine — which is the point of the engine being generic over lag unit.
+ * A second pipeline is a second collector, not a second health rule.
+ */
+export async function collectCivicHealth(
+  options: { now?: () => Date } = {},
+): Promise<PipelineHealthReport[]> {
+  const repository = getCivicRepository();
+  const importRuns = getImportRunStore();
+  const dataset = MONTREAL_PERMITS;
+
+  const latestPeriod = await repository.getLatestPeriod();
+  const { freshness, monthLag } = assessPeriodFreshness({
+    latestPeriod,
+    maxPeriodLagMonths: dataset.maxPeriodLagMonths,
+    dataQuality: repository.dataQuality,
+    today: options.now ? currentPeriod(options.now()) : undefined,
+  });
+
+  const importHealth = await importRuns.getHealth(dataset.sourceId);
+  const runs = await importRuns.listRuns(dataset.sourceId, 5);
+
+  return [
+    assessPipelineHealth(
+      {
+        pipelineId: `${dataset.sourceId}:${dataset.code}`,
+        dataSourceId: dataset.sourceId,
+        label: dataset.title,
+        dataQuality: repository.dataQuality,
+        freshness,
+        lag: monthLag,
+        maxLag: dataset.maxPeriodLagMonths,
+        lagUnit: "month",
+        latestObservationDate: latestPeriod,
+        importHealth,
+        lastRun: toRunSummary(mostRecentCompleted(runs)),
+      },
+      options,
+    ),
+  ];
 }

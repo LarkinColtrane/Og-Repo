@@ -133,6 +133,47 @@ export const bankOfCanadaIngestSchema = z
     { message: "`startDate` must not be after `endDate`." },
   );
 
+/* ── Civic data ───────────────────────────────────────────────────────────── */
+
+/**
+ * `GET /api/civic/permits`.
+ *
+ * `neighbourhood` and `borough` are alternatives, not a pair. Accepting both
+ * would mean deciding which wins, and either answer surprises half the callers —
+ * so the schema refuses instead.
+ */
+export const permitQuerySchema = z
+  .object({
+    neighbourhood: z.string().min(1).max(80).optional(),
+    borough: z.string().min(1).max(80).optional(),
+    /** Months of history, counted back from the latest period on record. */
+    months: z.coerce.number().int().min(1).max(240).default(24),
+    from: periodSchema.optional(),
+    to: periodSchema.optional(),
+  })
+  .refine((query) => !(query.neighbourhood && query.borough), {
+    message: "Provide either `neighbourhood` or `borough`, not both.",
+  })
+  .refine((query) => !(query.from && query.to) || query.from <= query.to, {
+    message: "`from` must not be after `to`.",
+  });
+
+/**
+ * Body accepted by the civic ingest endpoint.
+ *
+ * Everything is optional: a bare `POST` imports the whole permit dataset, which
+ * is the right default for a first backfill and harmless afterwards because the
+ * write upserts.
+ */
+export const montrealPermitsIngestSchema = z.object({
+  dataset: z.string().min(1).optional(),
+  from: periodSchema.optional(),
+  to: periodSchema.optional(),
+  /** Bound the work, so an unattended run cannot read a dataset of unknown size. */
+  maxRecords: z.coerce.number().int().min(1).max(1_000_000).optional(),
+  triggeredBy: z.enum(["manual", "schedule", "webhook"]).default("manual"),
+});
+
 /**
  * Options accepted by the provider-neutral scheduler endpoint.
  *
@@ -156,6 +197,22 @@ export const scheduledIngestSchema = z.object({
   notify: z
     .union([z.boolean(), z.enum(["true", "false"]).transform((v) => v === "true")])
     .default(true),
+  /**
+   * Which pipelines to run, comma-separated. Both by default.
+   *
+   * A scheduler needing different cadences — the bond yield is business-daily,
+   * permits are monthly — points two cron entries at this one URL with
+   * different values rather than at two endpoints.
+   */
+  pipelines: z
+    .union([
+      z.array(z.enum(["benchmarks", "civic"])),
+      z
+        .string()
+        .transform((value) => value.split(",").map((part) => part.trim()).filter(Boolean))
+        .pipe(z.array(z.enum(["benchmarks", "civic"])).min(1)),
+    ])
+    .default(["benchmarks", "civic"]),
 });
 
 /** Turn `?range=3y` into a concrete `from` bound relative to the latest period. */
