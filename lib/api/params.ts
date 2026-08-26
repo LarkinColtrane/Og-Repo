@@ -133,6 +133,31 @@ export const bankOfCanadaIngestSchema = z
     { message: "`startDate` must not be after `endDate`." },
   );
 
+/**
+ * Options accepted by the provider-neutral scheduler endpoint.
+ *
+ * Everything is optional and every default is safe, because a scheduler should
+ * be configurable with a bare URL and no body — a Vercel Cron entry is a path
+ * and a cron expression, with nowhere to put JSON.
+ */
+export const scheduledIngestSchema = z.object({
+  /** Limit the run to one series. Defaults to every scheduled series. */
+  series: benchmarkSeriesSchema.optional(),
+  /**
+   * Size of the overlapping window, in observations.
+   *
+   * Ten business days, not one. A scheduled import must re-fetch a window it has
+   * already seen: it is how a missed run heals itself on the next execution, and
+   * how a value the publisher later revises gets corrected. Writes upsert on
+   * `(series, observation_date)`, so re-importing the same ten days is free.
+   */
+  recent: z.coerce.number().int().min(1).max(1000).default(10),
+  /** Set false to run the ingest without sending notifications. */
+  notify: z
+    .union([z.boolean(), z.enum(["true", "false"]).transform((v) => v === "true")])
+    .default(true),
+});
+
 /** Turn `?range=3y` into a concrete `from` bound relative to the latest period. */
 export function resolveDateBounds(
   latestPeriod: Period,

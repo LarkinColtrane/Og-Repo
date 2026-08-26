@@ -289,55 +289,66 @@ database, not separate systems.
 
 ## 7. Authentication
 
-**The ingest and diagnostics endpoints are unauthenticated.** This is a known,
-deliberate gap, not an oversight.
+**Both internal endpoints require a shared secret**, sent as a bearer token:
 
-The project has no authentication system, and inventing one for two endpoints
-would add more surface than it closes. Both live under `/api/internal/` so the
-boundary is explicit, and adding a check is a three-line edit at the top of each
-handler:
-
-```ts
-import { timingSafeEqual } from "node:crypto";
-
-function isAuthorised(request: Request): boolean {
-  const provided = request.headers.get("x-api-key");
-  const expected = process.env.IMPORT_API_KEY;
-  if (!provided || !expected || provided.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
-}
+```
+Authorization: Bearer $MARKET_INGEST_SECRET
 ```
 
-Until that exists:
+| Condition | Result |
+|---|---|
+| Correct secret | Handler runs |
+| Header missing | `401`, `outcome: missing-credentials` |
+| Not the `Bearer` scheme | `401`, `outcome: malformed-credentials` |
+| Wrong secret | `401`, `outcome: invalid-credentials` |
+| No secret configured, `NODE_ENV=production` | `401`, `outcome: not-configured` |
+| No secret configured, development | Allowed, with a `warning` in the response |
 
-- **Neither endpoint may be exposed to the public internet.** The ingest route can
-  drive unbounded outbound requests to the Bank of Canada — a trivial way to get
-  this host rate-limited or blocked.
-- The diagnostics route leaks operational metadata (run timestamps, error
-  messages) but no market data that `/api/market/benchmarks` does not already
-  serve publicly.
+The check lives in `lib/api/ingest-auth.ts` and runs **before the request body is
+read**, so an unauthorised caller cannot make this host contact the Bank of
+Canada. Three properties are enforced and tested:
 
-The public read endpoint `/api/market/benchmarks` is intentionally open. It serves
-published government data.
+1. **Never client-side.** No `NEXT_PUBLIC_` prefix, and `tests/auth.test.ts`
+   walks the source tree asserting that no client component reads the variable.
+2. **Never logged.** Not in a message, not in `details`, not on success.
+3. **Constant-time comparison.** Both values are SHA-256'd before
+   `timingSafeEqual`, which gives it two equal-length buffers and avoids leaking
+   the real secret's length.
+
+This is *not* an authentication system. There are no users, sessions or roles —
+one secret, held by a scheduler, checked by a server. That is the right size for
+machine-to-machine calls, and deliberately too small to grow into anything else.
+
+The public read endpoint `/api/market/benchmarks` is intentionally open. It
+serves published government data.
 
 ---
 
 ## 8. Scheduling
 
-Not implemented. When it is, once per business day after the afternoon
-publication is right — a series that updates daily gains nothing from hourly
-polling, and the Bank's terms deserve the courtesy.
+Implemented. `POST` or `GET /api/internal/market-data/scheduled` runs every
+scheduled import and then evaluates monitoring, in one request.
+
+```bash
+curl -X POST https://your-host/api/internal/market-data/scheduled \
+  -H "Authorization: Bearer $MARKET_INGEST_SECRET"
+```
+
+Once per business day after the afternoon publication is right — a series that
+updates daily gains nothing from hourly polling, and the Bank's terms deserve
+the courtesy:
 
 ```
 0 21 * * 1-5   # 21:00 UTC ≈ 17:00 Eastern, weekdays
 ```
 
-Use `{"recent": 10}` rather than a range: it is a small request, and the overlap
-repairs any day a previous run missed. The upsert makes the overlap free.
+The window is `recent: 10`, not `1`. The overlap repairs any day a previous run
+missed and picks up a revised value; the upsert on
+`(series_code, observation_date)` makes re-importing the same ten days free.
 
-The failure path matters more than the schedule. A run that fails needs to reach
-a person — the `error_kind` field exists so alerts can be grouped by cause rather
-than firing identically for a network blip and a format change.
+**See [AUTOMATION.md](./AUTOMATION.md)** for the endpoint contract, worked
+examples for n8n, Vercel Cron, GitHub Actions and plain cron, and how the health
+and alerting layers behave.
 
 ---
 

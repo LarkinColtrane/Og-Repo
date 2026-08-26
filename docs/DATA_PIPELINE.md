@@ -304,33 +304,39 @@ jobs:
 
 ## 7. API authentication
 
-The public read endpoints under `/api` serve aggregates and need no auth. The
-ingest endpoint writes to the database and needs it.
+The public read endpoints under `/api` serve aggregates and need no auth. Every
+endpoint that writes, or that exposes operational metadata, does.
 
-**Use a shared secret in a header, not a query string.** URLs end up in server
-logs, browser history and referrer headers; headers mostly do not.
+**This is built.** `lib/api/ingest-auth.ts` protects everything under
+`/api/internal/`, and any future ingest endpoint uses the same guard rather than
+its own:
 
 ```ts
-// app/api/internal/import/route.ts
-import { timingSafeEqual } from "node:crypto";
+// app/api/internal/<whatever>/route.ts
+import { requireIngestAuth } from "@/lib/api/ingest-auth";
 
-function isAuthorised(request: Request): boolean {
-  const provided = request.headers.get("x-api-key");
-  const expected = process.env.IMPORT_API_KEY;
-  if (!provided || !expected || provided.length !== expected.length) return false;
-  // Constant-time comparison: `===` on secrets leaks their prefix through timing.
-  return timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+export async function POST(request: Request) {
+  const denied = requireIngestAuth(request);
+  if (denied) return denied;
+  // …
 }
 ```
 
+The contract, in full, is in [`AUTOMATION.md`](./AUTOMATION.md) §2. In short:
+`Authorization: Bearer $MARKET_INGEST_SECRET`, constant-time comparison over
+SHA-256 digests, and fail-closed in production when no secret is configured.
+
+**Use a header, not a query string.** URLs end up in server logs, browser
+history and referrer headers; headers mostly do not.
+
 Rules that matter more than the code:
 
-- The key lives in `.env.local` (git-ignored) and in your host's secret store.
+- The secret lives in `.env.local` (git-ignored) and in your host's secret store.
   Never in the repository, never in a client component — anything imported by a
   `"use client"` file ships to the browser.
 - Only `process.env` names prefixed `NEXT_PUBLIC_` are exposed to the browser.
-  Never prefix a secret.
-- Rotate by accepting two keys during a changeover, then dropping the old one.
+  Never prefix a secret. `tests/auth.test.ts` asserts this mechanically.
+- Rotate by accepting two secrets during a changeover, then dropping the old one.
 - When you move past a shared secret, the next step is a signed request (HMAC of
   body + timestamp) which also gives you replay protection. A shared secret is
   fine to start; it is not fine forever.

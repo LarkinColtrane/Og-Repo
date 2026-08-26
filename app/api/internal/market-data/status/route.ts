@@ -2,6 +2,10 @@ import { BENCHMARK_SERIES_CODES } from "@/types/benchmark";
 import { getBenchmarkRepository, getImportRunStore } from "@/lib/data";
 import { getBenchmarkSnapshot } from "@/lib/data/benchmark-service";
 import { apiSuccess, withErrorHandling } from "@/lib/api/response";
+import {
+  authoriseIngest,
+  requireIngestAuth,
+} from "@/lib/api/ingest-auth";
 import { getAttributions } from "@/lib/data";
 import { BANK_OF_CANADA_SOURCE_ID } from "@/lib/pipeline/connectors/bank-of-canada/series";
 
@@ -15,15 +19,20 @@ import { BANK_OF_CANADA_SOURCE_ID } from "@/lib/pipeline/connectors/bank-of-cana
  * invisible until somebody notices the chart has stopped moving — which, for a
  * series that legitimately sits flat for days, could be weeks.
  *
- * ⚠️ **Unauthenticated.** The project has no auth system and inventing one for a
- * single endpoint would be worse than the gap it closes. It exposes operational
- * metadata — run timestamps, record counts, error messages — and no market data
- * that `/api/market/benchmarks` does not already serve publicly. Before this is
- * deployed anywhere public it needs the same shared-secret check documented for
- * the ingest endpoint. See docs/BANK_OF_CANADA.md § Authentication.
+ * ## Authentication
+ *
+ * Protected by the same shared secret as the ingest endpoint:
+ * `Authorization: Bearer $MARKET_INGEST_SECRET`. Operational metadata — run
+ * timestamps, error messages, upstream request URLs — is not market data and
+ * has no business being public. The response reports its own protection state
+ * so an operator can confirm the check is actually on.
  */
-export async function GET() {
+export async function GET(request: Request) {
   return withErrorHandling(async () => {
+    const denied = requireIngestAuth(request);
+    if (denied) return denied;
+
+    const auth = authoriseIngest(request);
     const repository = getBenchmarkRepository();
     const importRuns = getImportRunStore();
 
@@ -58,8 +67,14 @@ export async function GET() {
         health,
         recentRuns,
         authentication: {
-          enabled: false,
-          note: "This endpoint is unauthenticated. It must not be exposed publicly without the shared-secret check described in docs/BANK_OF_CANADA.md.",
+          enabled: auth.outcome !== "unprotected",
+          /**
+           * Present only when the endpoint is running without a configured
+           * secret, which the guard permits outside production. Stating it in
+           * the payload means a misconfigured deployment announces itself
+           * instead of looking identical to a protected one.
+           */
+          warning: auth.outcome === "unprotected" ? auth.message : null,
         },
       },
       {

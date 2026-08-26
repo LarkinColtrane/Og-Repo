@@ -35,6 +35,8 @@ export interface ApiErrorBody {
 export type ApiErrorCode =
   | "NOT_FOUND"
   | "INVALID_REQUEST"
+  /** Shared-secret check failed on an internal write endpoint. */
+  | "UNAUTHORIZED"
   | "INTERNAL_ERROR"
   | "NOT_IMPLEMENTED";
 

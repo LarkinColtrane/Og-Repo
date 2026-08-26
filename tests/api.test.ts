@@ -26,7 +26,25 @@ before(async () => {
   }
 });
 
+/**
+ * The secret the server under test was started with, when it was started with
+ * one. Present → the authenticated paths are exercised for real; absent → the
+ * server is running unprotected in development, which is itself a supported
+ * configuration and is asserted separately.
+ */
+const INGEST_SECRET = process.env.MARKET_INGEST_SECRET;
+
 const api = (path: string, init?: RequestInit) => fetch(`${BASE}${path}`, init);
+
+/** Same request, with the shared secret attached when one is configured. */
+const authed = (path: string, init: RequestInit = {}) =>
+  api(path, {
+    ...init,
+    headers: {
+      ...(init.headers as Record<string, string> | undefined),
+      ...(INGEST_SECRET ? { Authorization: `Bearer ${INGEST_SECRET}` } : {}),
+    },
+  });
 
 describe("GET /api/market/benchmarks", () => {
   it("returns a snapshot with the standard envelope", async (t) => {
@@ -91,7 +109,7 @@ describe("GET /api/market/benchmarks", () => {
 
 describe("POST /api/internal/market-data/bank-of-canada", () => {
   const post = (body: unknown) =>
-    api("/api/internal/market-data/bank-of-canada", {
+    authed("/api/internal/market-data/bank-of-canada", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
@@ -99,12 +117,56 @@ describe("POST /api/internal/market-data/bank-of-canada", () => {
 
   it("rejects a non-JSON body", async (t) => {
     if (!serverUp) return t.skip("no server");
-    const response = await api("/api/internal/market-data/bank-of-canada", {
+    const response = await authed("/api/internal/market-data/bank-of-canada", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: "not json",
     });
     assert.equal(response.status, 400);
+  });
+
+  it("rejects a request with no credentials", async (t) => {
+    if (!serverUp) return t.skip("no server");
+    if (!INGEST_SECRET) return t.skip("server running unprotected");
+    const response = await api("/api/internal/market-data/bank-of-canada", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ series: "5y-canada-bond", recent: 1 }),
+    });
+    assert.equal(response.status, 401);
+    const body = await response.json();
+    assert.equal(body.error.code, "UNAUTHORIZED");
+    assert.equal(body.error.details.outcome, "missing-credentials");
+  });
+
+  it("rejects an incorrect secret without touching the pipeline", async (t) => {
+    if (!serverUp) return t.skip("no server");
+    if (!INGEST_SECRET) return t.skip("server running unprotected");
+    const response = await api("/api/internal/market-data/bank-of-canada", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: "Bearer definitely-not-the-secret",
+      },
+      body: JSON.stringify({ series: "5y-canada-bond", recent: 1 }),
+    });
+    assert.equal(response.status, 401);
+    const body = await response.json();
+    assert.equal(body.error.details.outcome, "invalid-credentials");
+    assert.ok(!("runId" in (body.error.details ?? {})), "no import run was opened");
+    assert.ok(!JSON.stringify(body).includes(INGEST_SECRET), "the secret is not echoed");
+  });
+
+  it("rejects a bare token with no Bearer scheme", async (t) => {
+    if (!serverUp) return t.skip("no server");
+    if (!INGEST_SECRET) return t.skip("server running unprotected");
+    const response = await api("/api/internal/market-data/bank-of-canada", {
+      method: "POST",
+      headers: { "content-type": "application/json", Authorization: INGEST_SECRET },
+      body: JSON.stringify({ series: "5y-canada-bond", recent: 1 }),
+    });
+    assert.equal(response.status, 401);
+    assert.equal((await response.json()).error.details.outcome, "malformed-credentials");
   });
 
   it("rejects an unknown series", async (t) => {
@@ -155,7 +217,7 @@ describe("POST /api/internal/market-data/bank-of-canada", () => {
 describe("GET /api/internal/market-data/status", () => {
   it("reports store, series freshness and import health", async (t) => {
     if (!serverUp) return t.skip("no server");
-    const body = await (await api("/api/internal/market-data/status")).json();
+    const body = await (await authed("/api/internal/market-data/status")).json();
 
     assert.ok(body.data.store.benchmarks);
     assert.equal(typeof body.data.store.ephemeral, "boolean");
@@ -163,7 +225,99 @@ describe("GET /api/internal/market-data/status", () => {
     assert.ok(body.data.series.some((s: { seriesCode: string }) => s.seriesCode === "5y-canada-bond"));
     assert.ok(body.data.health);
     assert.equal(typeof body.data.health.consecutiveFailures, "number");
-    assert.equal(body.data.authentication.enabled, false, "the auth gap is declared, not hidden");
+    assert.equal(
+      body.data.authentication.enabled,
+      Boolean(INGEST_SECRET),
+      "the endpoint reports its own protection state",
+    );
+    if (!INGEST_SECRET) {
+      assert.match(body.data.authentication.warning ?? "", /unprotected/);
+    }
+  });
+
+  it("refuses operational metadata to an unauthenticated caller", async (t) => {
+    if (!serverUp) return t.skip("no server");
+    if (!INGEST_SECRET) return t.skip("server running unprotected");
+    const response = await api("/api/internal/market-data/status");
+    assert.equal(response.status, 401);
+  });
+});
+
+describe("the scheduler endpoint", () => {
+  const PATH = "/api/internal/market-data/scheduled";
+
+  it("accepts POST with no body at all", async (t) => {
+    if (!serverUp) return t.skip("no server");
+    const response = await authed(PATH, { method: "POST" });
+    assert.equal(response.status, 200, "a scheduler must be able to call a bare URL");
+
+    const body = await response.json();
+    assert.equal(typeof body.data.ok, "boolean");
+    assert.equal(body.data.triggeredBy, "schedule");
+    assert.equal(body.data.window.recent, 10, "the default overlapping window");
+    assert.ok(Array.isArray(body.data.series));
+    assert.equal(body.data.series.length, 1, "only the scheduled series runs");
+    assert.equal(body.data.series[0].seriesCode, "5y-canada-bond");
+  });
+
+  it("accepts GET, which is all Vercel Cron can issue", async (t) => {
+    if (!serverUp) return t.skip("no server");
+    const response = await authed(PATH);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).data.window.recent, 10);
+  });
+
+  it("reads options from the query string on GET", async (t) => {
+    if (!serverUp) return t.skip("no server");
+    const body = await (await authed(`${PATH}?recent=25&notify=false`)).json();
+    assert.equal(body.data.window.recent, 25);
+    assert.equal(body.data.monitor.alerting.notified, false);
+  });
+
+  it("returns 200 with ok:false when the import fails", async (t) => {
+    if (!serverUp) return t.skip("no server");
+    // The upstream host is blocked by the sandbox egress policy, so this run
+    // fails — which is the path under test: a scheduler gets a reachable
+    // endpoint and a reported failure, not a 5xx that triggers a retry storm.
+    const response = await authed(PATH, { method: "POST" });
+    assert.equal(response.status, 200);
+
+    const body = await response.json();
+    assert.equal(body.data.ok, false);
+    assert.equal(body.data.series[0].status, "failed");
+    assert.ok(body.data.series[0].runId, "the failed run is recorded in the audit trail");
+    assert.ok(body.data.series[0].errorKind);
+    assert.ok(!JSON.stringify(body).includes("    at "), "no stack frames in the response");
+  });
+
+  it("assesses pipeline health on every execution", async (t) => {
+    if (!serverUp) return t.skip("no server");
+    const body = await (await authed(PATH, { method: "POST" })).json();
+    const { monitor } = body.data;
+
+    assert.ok(
+      ["healthy", "degraded", "failing", "stale", "demo", "unavailable"].includes(
+        monitor.overall,
+      ),
+      `unexpected state: ${monitor.overall}`,
+    );
+    assert.equal(monitor.reports.length, 1);
+    assert.equal(monitor.reports[0].pipelineId, "src-boc-valet:5y-canada-bond");
+    assert.ok(Array.isArray(monitor.alerts));
+    assert.ok(Array.isArray(monitor.alerting.providers));
+  });
+
+  it("rejects an unauthenticated scheduler call", async (t) => {
+    if (!serverUp) return t.skip("no server");
+    if (!INGEST_SECRET) return t.skip("server running unprotected");
+    assert.equal((await api(PATH, { method: "POST" })).status, 401);
+    assert.equal((await api(PATH)).status, 401, "GET is protected too");
+  });
+
+  it("rejects nonsense options", async (t) => {
+    if (!serverUp) return t.skip("no server");
+    assert.equal((await authed(`${PATH}?recent=0`)).status, 400);
+    assert.equal((await authed(`${PATH}?series=nasdaq`)).status, 400);
   });
 });
 

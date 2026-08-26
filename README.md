@@ -124,7 +124,7 @@ app/                          Routes (Next.js App Router)
 │   ├── neighbourhoods/       GET list, [slug], [slug]/rent, [slug]/sales
 │   ├── mortgage/             GET lenders, rates, compare
 │   ├── market/benchmarks/    GET bond yield history + freshness
-│   ├── internal/market-data/ POST ingest · GET pipeline diagnostics
+│   ├── internal/market-data/ POST ingest · GET|POST scheduled run · GET diagnostics
 │   ├── compare/              GET side-by-side comparison
 │   └── data-sources/         GET provenance registry
 ├── (routes)/                 rent · buy · sell · invest · compare · neighbourhoods
@@ -179,7 +179,8 @@ types/                        Shared TypeScript contracts
 tests/                        node:test suites — connector, transform, validate,
                               persistence, ingest, calculations, API
 docs/                         DATA_PIPELINE.md · MORTGAGE_RATE_PIPELINE.md
-                              BANK_OF_CANADA.md · DATABASE_SCHEMA.md · sql/
+                              BANK_OF_CANADA.md · AUTOMATION.md
+                              DATABASE_SCHEMA.md · sql/
 ```
 
 ---
@@ -220,7 +221,8 @@ curl "localhost:3000/api/compare?slugs=plateau-mont-royal,verdun,villeray"
 curl "localhost:3000/api/mortgage/rates?productType=fixed&termYears=5"
 curl "localhost:3000/api/mortgage/compare?price=725000&downPaymentPercent=20&occupancy=investment&units=3"
 curl "localhost:3000/api/market/benchmarks?series=5y-canada-bond&range=1y"
-curl "localhost:3000/api/internal/market-data/status"
+curl -H "Authorization: Bearer $MARKET_INGEST_SECRET" \
+  "localhost:3000/api/internal/market-data/status"
 ```
 
 ---
@@ -293,8 +295,14 @@ Errors use `{ "error": { "code", "message" } }` with a matching HTTP status.
 | `GET /api/mortgage/rates` | `productType`, `termYears`, `lenderId`, `borrowerProfile` |
 | `GET /api/mortgage/compare` | `price`, `downPaymentPercent`, `occupancy`, `units`, `termYears`, `amortizationYears`, `productType` |
 | `GET /api/market/benchmarks` | `series` (`5y-canada-bond`), `range` (`3m`/`1y`/`3y`/`5y`) |
-| `POST /api/internal/market-data/bank-of-canada` | Body: `series`, and either `startDate`+`endDate` or `recent` |
-| `GET /api/internal/market-data/status` | — (pipeline diagnostics) |
+| `POST /api/internal/market-data/bank-of-canada` 🔒 | Body: `series`, and either `startDate`+`endDate` or `recent` |
+| `GET POST /api/internal/market-data/scheduled` 🔒 | `series`, `recent` (default `10`), `notify` — all optional |
+| `GET /api/internal/market-data/status` 🔒 | — (pipeline diagnostics) |
+
+🔒 Everything under `/api/internal/` requires
+`Authorization: Bearer $MARKET_INGEST_SECRET`, and fails closed in production
+when no secret is configured. See
+[`docs/AUTOMATION.md`](./docs/AUTOMATION.md).
 
 Query strings are validated with Zod in
 [`lib/api/params.ts`](./lib/api/params.ts) before reaching the data layer, so a
@@ -414,8 +422,9 @@ Schedule Trigger  →  HTTP Request   →  Code        →  HTTP Request      �
 2. **HTTP Request** — GET the upstream file.
 3. **Code** — reshape rows into the JSON the ingest endpoint expects. This node
    is n8n standing in for the transform layer.
-4. **HTTP Request** — POST to `/api/internal/import` with `IMPORT_API_KEY` in an
-   `x-api-key` header. Batch a few hundred rows per request.
+4. **HTTP Request** — POST to `/api/internal/import` with
+   `Authorization: Bearer $MARKET_INGEST_SECRET`. Batch a few hundred rows per
+   request. See [`docs/AUTOMATION.md`](./docs/AUTOMATION.md).
 5. **IF** — branch on status and notify yourself on failure. An import that fails
    silently is the same as no import.
 

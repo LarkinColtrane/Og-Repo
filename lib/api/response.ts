@@ -55,6 +55,7 @@ export function apiSuccess<T>(
 const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   NOT_FOUND: 404,
   INVALID_REQUEST: 400,
+  UNAUTHORIZED: 401,
   INTERNAL_ERROR: 500,
   NOT_IMPLEMENTED: 501,
 };

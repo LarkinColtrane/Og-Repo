@@ -68,3 +68,17 @@ export function findBenchmarkSeries(code: string): BenchmarkSeriesMeta | null {
 
 /** The series the interface currently shows. */
 export const PRIMARY_BENCHMARK_SERIES: BenchmarkSeriesCode = "5y-canada-bond";
+
+/**
+ * The series a scheduled run imports, and therefore the only ones monitoring
+ * will alert on.
+ *
+ * The other two are registered so the mapping is documented and so adding them
+ * is a one-line change — but nothing imports them yet, and a monitor that pages
+ * about a pipeline nobody asked to run is a monitor that gets muted. Add a code
+ * here and it becomes both scheduled and monitored in the same edit, which is
+ * the point: the two lists cannot drift apart because there is only one.
+ */
+export const SCHEDULED_BENCHMARK_SERIES: readonly BenchmarkSeriesCode[] = [
+  "5y-canada-bond",
+];

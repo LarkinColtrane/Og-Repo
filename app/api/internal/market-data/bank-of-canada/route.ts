@@ -6,6 +6,7 @@ import {
   ingestBankOfCanadaSeries,
 } from "@/lib/pipeline/ingest/bank-of-canada";
 import { apiError, apiSuccess, withErrorHandling } from "@/lib/api/response";
+import { requireIngestAuth, unprotectedWarning } from "@/lib/api/ingest-auth";
 import { bankOfCanadaIngestSchema, describeValidationError } from "@/lib/api/params";
 import { getAttributions } from "@/lib/data";
 import { BANK_OF_CANADA_SOURCE_ID } from "@/lib/pipeline/connectors/bank-of-canada/series";
@@ -25,23 +26,29 @@ import { BANK_OF_CANADA_SOURCE_ID } from "@/lib/pipeline/connectors/bank-of-cana
  * { "series": "5y-canada-bond", "recent": 30 }
  * ```
  *
- * ⚠️ **Unauthenticated, by decision.** This project has no auth system, and
- * `19.` of the brief rules out inventing one for a single endpoint. The route is
- * namespaced under `/api/internal/` so the boundary is obvious, and adding a
- * check is a three-line edit at the top of this handler:
+ * ## Authentication
  *
- * ```ts
- * if (!isAuthorised(request)) return apiError("INVALID_REQUEST", "Unauthorized.");
+ * Protected by a shared secret. Send:
+ *
+ * ```
+ * Authorization: Bearer $MARKET_INGEST_SECRET
  * ```
  *
- * with `isAuthorised` doing a constant-time comparison against `IMPORT_API_KEY` —
- * the same shape already documented in docs/DATA_PIPELINE.md §7. Until that
- * exists, **this endpoint must not be reachable from the public internet**: it
- * can drive unbounded outbound requests to the Bank of Canada. See
- * docs/BANK_OF_CANADA.md § Authentication.
+ * Missing, malformed or incorrect credentials get a 401 and the pipeline is
+ * never touched — the check runs before the body is even read, so an
+ * unauthenticated caller cannot make this process contact the Bank of Canada.
+ * With no secret configured the endpoint fails closed in production and runs
+ * unprotected (with a warning in the response) in development. See
+ * `lib/api/ingest-auth.ts` and docs/AUTOMATION.md.
  */
 export async function POST(request: Request) {
   return withErrorHandling(async () => {
+    // Before anything else — before the body is parsed, before a connector is
+    // constructed. An unauthorised request must cost this server nothing and
+    // must never reach an upstream publisher.
+    const denied = requireIngestAuth(request);
+    if (denied) return denied;
+
     const raw = await request.json().catch(() => null);
     if (raw === null) {
       return apiError("INVALID_REQUEST", "Request body must be JSON.");
@@ -70,7 +77,9 @@ export async function POST(request: Request) {
         },
       );
 
-      return apiSuccess(result, {
+      const warning = unprotectedWarning(request);
+
+      return apiSuccess(warning ? { ...result, warning } : result, {
         period: result.lastObservationDate ?? new Date().toISOString().slice(0, 10),
         sources: getAttributions([BANK_OF_CANADA_SOURCE_ID]),
         dataQuality: getBenchmarkRepository().dataQuality,

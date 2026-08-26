@@ -247,13 +247,15 @@ market data: you find out quickly whether it works.
    into insured and uninsured rows. This node is n8n standing in for the
    normalize layer, and it is where the work actually is: no two feeds name
    institutions the same way.
-4. **HTTP Request** — `POST /api/internal/rates` with `IMPORT_API_KEY` in an
-   `x-api-key` header.
+4. **HTTP Request** — `POST /api/internal/rates` with
+   `Authorization: Bearer $MARKET_INGEST_SECRET`, the same guard the benchmark
+   endpoints already use. See [`AUTOMATION.md`](./AUTOMATION.md) §2.
 5. **IF** — branch on the response; notify on failure. A rate import that fails
    silently leaves yesterday's numbers on the page with today's confidence.
 
-The ingest endpoint is not built. It must: authenticate (constant-time comparison
-— see [`DATA_PIPELINE.md`](./DATA_PIPELINE.md) §7), validate with the schema in §5,
+The ingest endpoint is not built. It must: authenticate (one line —
+`requireIngestAuth(request)`, see [`DATA_PIPELINE.md`](./DATA_PIPELINE.md) §7),
+validate with the schema in §5,
 upsert per §6, write an `import_runs` row, and return
 `{ imported, rejected, runId }`.
 

@@ -6,6 +6,8 @@ import type { MarketBenchmarkRepository } from "./benchmark-repository";
 import { DemoMarketBenchmarkRepository } from "./demo-benchmark-repository";
 import type { ImportRunStore } from "./import-run-store";
 import { InMemoryImportRunStore } from "./import-run-store";
+import type { AlertIncidentStore } from "@/lib/pipeline/alerts";
+import { InMemoryAlertIncidentStore } from "@/lib/pipeline/alerts";
 
 export * from "./repository";
 export { DemoMarketDataRepository } from "./demo-repository";
@@ -148,4 +150,30 @@ export function setImportRunStore(next: ImportRunStore): void {
 
 export function resetImportRunStore(): void {
   importRunStore = null;
+}
+
+/**
+ * Open monitoring incidents.
+ *
+ * A fourth factory, for the same reason as the third: this is pipeline state,
+ * not market data, and it becomes durable on a different day from everything
+ * else. Until then it is process-local, and `runPipelineMonitor` reports that
+ * limitation in its response rather than letting a serverless deployment
+ * quietly re-notify the same incident on every invocation.
+ */
+let alertIncidentStore: AlertIncidentStore | null = null;
+
+export function getAlertIncidentStore(): AlertIncidentStore {
+  if (!alertIncidentStore) {
+    alertIncidentStore = new InMemoryAlertIncidentStore();
+  }
+  return alertIncidentStore;
+}
+
+export function setAlertIncidentStore(next: AlertIncidentStore): void {
+  alertIncidentStore = next;
+}
+
+export function resetAlertIncidentStore(): void {
+  alertIncidentStore = null;
 }
