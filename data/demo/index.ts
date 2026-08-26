@@ -1,6 +1,7 @@
 import { generateDemoDataset, type DemoDataset } from "./generate";
 
 export * from "./neighbourhood-profiles";
+export * from "./lenders";
 export * from "./sources";
 export type { DemoDataset } from "./generate";
 

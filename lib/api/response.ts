@@ -19,6 +19,15 @@ export interface SuccessOptions {
   sources: Attribution[];
   /** Seconds a shared cache may serve this response. Defaults to no caching. */
   maxAge?: number;
+  /**
+   * Override the quality flag for routes served by a different repository.
+   *
+   * Mortgage rates come from `MortgageRateRepository`, not the market one, and
+   * the two will not become live on the same day. Without this, a route serving
+   * live rates would still announce itself as demo because the market data
+   * happened to be.
+   */
+  dataQuality?: "demo" | "live";
 }
 
 export function apiSuccess<T>(
@@ -27,7 +36,7 @@ export function apiSuccess<T>(
 ): NextResponse<ApiResponse<T>> {
   const meta: ApiMeta = {
     generatedAt: new Date().toISOString(),
-    dataQuality: getRepository().dataQuality,
+    dataQuality: options.dataQuality ?? getRepository().dataQuality,
     period: options.period,
     sources: options.sources,
   };

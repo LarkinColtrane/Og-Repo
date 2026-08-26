@@ -1,3 +1,4 @@
+import type { Lender, MortgageRate } from "@/types/mortgage";
 import type {
   ApiErrorBody,
   ApiErrorCode,
@@ -97,4 +98,16 @@ export const api = {
     fetchApi<ComparisonRow[]>(`/api/compare${query({ slugs: slugs.join(",") })}`, signal),
 
   dataSources: (signal?: AbortSignal) => fetchApi<DataSource[]>("/api/data-sources", signal),
+
+  lenders: (signal?: AbortSignal) => fetchApi<Lender[]>("/api/mortgage/lenders", signal),
+
+  /**
+   * Rates for one product and term, across every lender and both borrower
+   * profiles. The investor page fetches once per product/term change and then
+   * recomputes locally, so dragging a slider does not issue a request per frame.
+   */
+  mortgageRates: (
+    params: { productType?: string; termYears?: number; lenderId?: string } = {},
+    signal?: AbortSignal,
+  ) => fetchApi<MortgageRate[]>(`/api/mortgage/rates${query(params)}`, signal),
 };

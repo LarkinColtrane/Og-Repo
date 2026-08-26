@@ -24,6 +24,11 @@ export interface InvestmentInput {
   annualInsurance: number;
   /** Annual maintenance and repairs, in dollars. */
   annualMaintenance: number;
+  /**
+   * Anything not covered by the named categories — snow removal, a caretaker,
+   * accounting, utilities the landlord pays. Annual dollars.
+   */
+  annualOtherExpenses?: number;
   downPayment: number;
   interestRate: number;
   amortizationYears: number;
@@ -33,6 +38,19 @@ export interface InvestmentInput {
   managementFeePercent: number;
   /** One-time acquisition costs (transfer duty, notary, inspection) in dollars. */
   closingCosts: number;
+  /**
+   * A pre-computed loan, when one module has already decided it.
+   *
+   * The financing comparison owns eligibility, insurance and the borrower
+   * profile — rules this module knows nothing about. Passing its result in means
+   * the loan is decided once. Two modules independently working out whether a
+   * premium applies is exactly how they end up disagreeing by a few dollars and
+   * nobody can tell which is right.
+   *
+   * Omit it and the loan is computed here from `downPayment`, `interestRate` and
+   * `amortizationYears`, as before.
+   */
+  financing?: MortgageResult;
 }
 
 export interface InvestmentResult {
@@ -81,6 +99,7 @@ export interface OperatingExpenses {
   insurance: number;
   maintenance: number;
   management: number;
+  other: number;
 }
 
 export function calculateInvestment(input: InvestmentInput): InvestmentResult {
@@ -102,6 +121,7 @@ export function calculateInvestment(input: InvestmentInput): InvestmentResult {
     insurance: Math.max(0, input.annualInsurance),
     maintenance: Math.max(0, input.annualMaintenance),
     management: managementFeeDollars,
+    other: Math.max(0, input.annualOtherExpenses ?? 0),
   };
 
   const totalAnnualExpenses =
@@ -109,16 +129,19 @@ export function calculateInvestment(input: InvestmentInput): InvestmentResult {
     expenses.condoFees +
     expenses.insurance +
     expenses.maintenance +
-    expenses.management;
+    expenses.management +
+    expenses.other;
 
   const netOperatingIncome = effectiveGrossIncome - totalAnnualExpenses;
 
-  const mortgage = calculateMortgage({
-    purchasePrice,
-    downPayment: input.downPayment,
-    interestRate: input.interestRate,
-    amortizationYears: input.amortizationYears,
-  });
+  const mortgage =
+    input.financing ??
+    calculateMortgage({
+      purchasePrice,
+      downPayment: input.downPayment,
+      interestRate: input.interestRate,
+      amortizationYears: input.amortizationYears,
+    });
 
   const annualDebtService = mortgage.monthlyPayment * 12;
   const annualCashFlow = netOperatingIncome - annualDebtService;
@@ -134,6 +157,7 @@ export function calculateInvestment(input: InvestmentInput): InvestmentResult {
       insurance: round2(expenses.insurance),
       maintenance: round2(expenses.maintenance),
       management: round2(expenses.management),
+      other: round2(expenses.other),
     },
     totalAnnualExpenses: round2(totalAnnualExpenses),
     netOperatingIncome: round2(netOperatingIncome),

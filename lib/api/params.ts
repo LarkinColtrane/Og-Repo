@@ -53,6 +53,40 @@ export const compareQuerySchema = z.object({
     .refine((slugs) => slugs.length <= 4, "Compare at most four neighbourhoods at once."),
 });
 
+/* ── Mortgage endpoints ───────────────────────────────────────────────────── */
+
+export const productTypeSchema = z.enum(["fixed", "variable"]);
+export const borrowerProfileSchema = z.enum(["insured", "uninsured"]);
+export const occupancySchema = z.enum(["owner-occupied", "investment"]);
+
+/** Coerce a query-string number and bound it, so a URL cannot produce nonsense. */
+const boundedNumber = (min: number, max: number) =>
+  z.coerce.number().min(min).max(max);
+
+export const mortgageRatesQuerySchema = z.object({
+  lenderId: z.string().min(1).optional(),
+  productType: productTypeSchema.optional(),
+  termYears: boundedNumber(1, 10).optional(),
+  borrowerProfile: borrowerProfileSchema.optional(),
+});
+
+/**
+ * `GET /api/mortgage/compare`.
+ *
+ * The bounds are deliberate rather than decorative: an unbounded amortization or
+ * a negative price would produce a plausible-looking payment from meaningless
+ * inputs, and a caller would have no way to tell.
+ */
+export const mortgageCompareQuerySchema = z.object({
+  price: boundedNumber(1, 100_000_000),
+  downPaymentPercent: boundedNumber(0, 100),
+  amortizationYears: boundedNumber(1, 40).default(25),
+  termYears: boundedNumber(1, 10).default(5),
+  productType: productTypeSchema.default("fixed"),
+  occupancy: occupancySchema.default("investment"),
+  units: boundedNumber(1, 12).default(1),
+});
+
 /** Turn `?range=3y` into a concrete `from` bound relative to the latest period. */
 export function resolveDateBounds(
   latestPeriod: Period,

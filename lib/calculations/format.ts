@@ -90,3 +90,14 @@ export function formatAxisValue(value: number, unit: "currency" | "percent" | "c
   if (unit === "percent") return `${round(value, value < 10 ? 1 : 0)}%`;
   return formatNumber(value);
 }
+
+/**
+ * `4.90%` — a mortgage rate, always to two decimals.
+ *
+ * Rates are quoted in basis points and `4.9%` reads as less precise than the
+ * number actually is. The trailing zero is information, not noise.
+ */
+export function formatRate(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return `${value.toFixed(2)}%`;
+}

@@ -1,11 +1,16 @@
 import type { MarketDataRepository } from "./repository";
 import { DemoMarketDataRepository } from "./demo-repository";
+import type { MortgageRateRepository } from "./mortgage-repository";
+import { DemoMortgageRateRepository } from "./demo-mortgage-repository";
 
 export * from "./repository";
 export { DemoMarketDataRepository } from "./demo-repository";
 export { PostgresMarketDataRepository } from "./postgres-repository";
 export type { SqlExecutor } from "./postgres-repository";
 export * from "./attribution";
+export * from "./mortgage-repository";
+export { DemoMortgageRateRepository } from "./demo-mortgage-repository";
+export { PostgresMortgageRateRepository } from "./postgres-mortgage-repository";
 
 /**
  * The one place that decides where data comes from.
@@ -39,4 +44,37 @@ export function setRepository(next: MarketDataRepository): void {
 
 export function resetRepository(): void {
   repository = null;
+}
+
+/**
+ * The one place that decides where mortgage rates come from.
+ *
+ * Separate from `getRepository()` on purpose: rates and market statistics are
+ * different sources with different refresh cadences and different licensing, and
+ * they will not become live on the same day. Two factories means either can be
+ * switched to a real backing store without touching the other, and each keeps
+ * its own `dataQuality` flag.
+ *
+ * ```ts
+ * if (process.env.DATABASE_URL) {
+ *   return new PostgresMortgageRateRepository(executeSql);
+ * }
+ * ```
+ */
+let mortgageRateRepository: MortgageRateRepository | null = null;
+
+export function getMortgageRateRepository(): MortgageRateRepository {
+  if (!mortgageRateRepository) {
+    mortgageRateRepository = new DemoMortgageRateRepository();
+  }
+  return mortgageRateRepository;
+}
+
+/** Test seam, mirroring `setRepository`. */
+export function setMortgageRateRepository(next: MortgageRateRepository): void {
+  mortgageRateRepository = next;
+}
+
+export function resetMortgageRateRepository(): void {
+  mortgageRateRepository = null;
 }
