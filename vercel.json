@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/internal/market-data/scheduled?pipelines=benchmarks",
+      "schedule": "0 21 * * 1-5"
+    },
+    {
+      "path": "/api/internal/market-data/scheduled?pipelines=civic",
+      "schedule": "0 6 5 * *"
+    }
+  ]
+}

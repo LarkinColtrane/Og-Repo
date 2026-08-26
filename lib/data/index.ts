@@ -10,6 +10,77 @@ import type { AlertIncidentStore } from "@/lib/pipeline/alerts";
 import { InMemoryAlertIncidentStore } from "@/lib/pipeline/alerts";
 import type { CivicDataRepository } from "./civic-repository";
 import { DemoCivicDataRepository } from "./demo-civic-repository";
+import { PostgresMarketDataRepository } from "./postgres-repository";
+import { PostgresMortgageRateRepository } from "./postgres-mortgage-repository";
+import {
+  PostgresImportRunStore,
+  PostgresMarketBenchmarkRepository,
+} from "./postgres-benchmark-repository";
+import { PostgresCivicDataRepository } from "./postgres-civic-repository";
+import { PostgresAlertIncidentStore } from "./postgres-alert-store";
+import { getSqlExecutor } from "./postgres-client";
+
+/**
+ * The switch.
+ *
+ * Resolved per call rather than cached at module load: tests set and clear the
+ * variable between cases, and a value captured at import time would make the
+ * first test to run decide the answer for every test after it.
+ */
+function sql() {
+  return getSqlExecutor();
+}
+
+/**
+ * ## Which datasets `DATABASE_URL` actually switches
+ *
+ * Not all of them, and that is deliberate.
+ *
+ * A dataset should read from PostgreSQL when something can *put data there*.
+ * Four can:
+ *
+ *   - **benchmarks** — the Bank of Canada pipeline writes them
+ *   - **civic permits** — the Ville de Montréal pipeline writes them
+ *   - **import runs** — every pipeline writes them
+ *   - **alert incidents** — the monitor writes them
+ *
+ * Two cannot. There is no importer for neighbourhood prices and rents, and none
+ * for lender rates: the licensed feeds those would need are still `planned`.
+ * Pointing them at PostgreSQL would connect them to a table that nothing fills.
+ *
+ * That is not a hypothetical. Wiring all six to `DATABASE_URL` broke the
+ * production build the first time it was tried against a real database:
+ *
+ * ```
+ * Error occurred prerendering page "/"
+ * Error: No sale statistics on record.
+ *   at getLatestPeriod (lib/data/postgres-repository.ts:96)
+ * ```
+ *
+ * — which is precisely the state a new database is in the minute after the
+ * migrations run. The first deploy would have failed before serving a request.
+ *
+ * So the two datasets with no importer stay on the generated fallback, clearly
+ * labelled demo, until someone opts them in:
+ *
+ * ```bash
+ * MARKET_DATA_SOURCE=postgres      # once a market importer exists and has run
+ * MORTGAGE_RATES_SOURCE=postgres   # once a rate feed is licensed and importing
+ * ```
+ *
+ * This is an opt-in, not a fallback. Nothing switches *back* to demo on its own:
+ * once a dataset reads from PostgreSQL, an upstream outage leaves the last
+ * stored rows in place and the interface reports them as stale — it never
+ * quietly substitutes generated numbers. That rule is what
+ * `tests/integration/wiring.test.ts` pins down.
+ */
+function postgresEnabledFor(dataset: "market" | "rates"): boolean {
+  const flag =
+    dataset === "market"
+      ? process.env.MARKET_DATA_SOURCE
+      : process.env.MORTGAGE_RATES_SOURCE;
+  return flag === "postgres";
+}
 
 export * from "./repository";
 export { DemoMarketDataRepository } from "./demo-repository";
@@ -29,6 +100,18 @@ export {
 export * from "./civic-repository";
 export { DemoCivicDataRepository } from "./demo-civic-repository";
 export { PostgresCivicDataRepository } from "./postgres-civic-repository";
+export { PostgresAlertIncidentStore } from "./postgres-alert-store";
+export { closePool, getPool, getSqlExecutor } from "./postgres-client";
+
+/** Clear every cached repository. Used by tests that switch DATABASE_URL. */
+export function resetAllRepositories(): void {
+  resetRepository();
+  resetMortgageRateRepository();
+  resetBenchmarkRepository();
+  resetCivicRepository();
+  resetImportRunStore();
+  resetAlertIncidentStore();
+}
 
 /**
  * The one place that decides where data comes from.
@@ -50,7 +133,10 @@ let repository: MarketDataRepository | null = null;
 
 export function getRepository(): MarketDataRepository {
   if (!repository) {
-    repository = new DemoMarketDataRepository();
+    const executor = postgresEnabledFor("market") ? sql() : null;
+    repository = executor
+      ? new PostgresMarketDataRepository(executor)
+      : new DemoMarketDataRepository();
   }
   return repository;
 }
@@ -83,7 +169,10 @@ let mortgageRateRepository: MortgageRateRepository | null = null;
 
 export function getMortgageRateRepository(): MortgageRateRepository {
   if (!mortgageRateRepository) {
-    mortgageRateRepository = new DemoMortgageRateRepository();
+    const executor = postgresEnabledFor("rates") ? sql() : null;
+    mortgageRateRepository = executor
+      ? new PostgresMortgageRateRepository(executor)
+      : new DemoMortgageRateRepository();
   }
   return mortgageRateRepository;
 }
@@ -119,7 +208,10 @@ let benchmarkRepository: MarketBenchmarkRepository | null = null;
 
 export function getBenchmarkRepository(): MarketBenchmarkRepository {
   if (!benchmarkRepository) {
-    benchmarkRepository = new DemoMarketBenchmarkRepository();
+    const executor = sql();
+    benchmarkRepository = executor
+      ? new PostgresMarketBenchmarkRepository(executor)
+      : new DemoMarketBenchmarkRepository();
   }
   return benchmarkRepository;
 }
@@ -144,7 +236,10 @@ let importRunStore: ImportRunStore | null = null;
 
 export function getImportRunStore(): ImportRunStore {
   if (!importRunStore) {
-    importRunStore = new InMemoryImportRunStore();
+    const executor = sql();
+    importRunStore = executor
+      ? new PostgresImportRunStore(executor)
+      : new InMemoryImportRunStore();
   }
   return importRunStore;
 }
@@ -180,7 +275,10 @@ let civicRepository: CivicDataRepository | null = null;
 
 export function getCivicRepository(): CivicDataRepository {
   if (!civicRepository) {
-    civicRepository = new DemoCivicDataRepository();
+    const executor = sql();
+    civicRepository = executor
+      ? new PostgresCivicDataRepository(executor)
+      : new DemoCivicDataRepository();
   }
   return civicRepository;
 }
@@ -206,7 +304,10 @@ let alertIncidentStore: AlertIncidentStore | null = null;
 
 export function getAlertIncidentStore(): AlertIncidentStore {
   if (!alertIncidentStore) {
-    alertIncidentStore = new InMemoryAlertIncidentStore();
+    const executor = sql();
+    alertIncidentStore = executor
+      ? new PostgresAlertIncidentStore(executor)
+      : new InMemoryAlertIncidentStore();
   }
   return alertIncidentStore;
 }

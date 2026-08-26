@@ -86,7 +86,9 @@ export class PostgresCivicDataRepository implements CivicDataRepository {
           declared_work_value, by_category, data_source_id, retrieved_at, data_quality)
        SELECT * FROM unnest(
          $1::text[], $2::text[], $3::int[], $4::int[],
-         $5::numeric[], $6::jsonb[], $7::text[], $8::timestamptz[], $9::text[]
+         $5::numeric[], $6::jsonb[], $7::text[], $8::timestamptz[],
+         -- Enum array, not text[]. See the note in the benchmark repository.
+         $9::civic_data_quality[]
        )
        ON CONFLICT (borough_code, period) DO UPDATE
          SET permits_issued         = EXCLUDED.permits_issued,

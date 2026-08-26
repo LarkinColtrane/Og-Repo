@@ -81,10 +81,15 @@ export class PostgresMortgageRateRepository implements MortgageRateRepository {
               l.display_order
          FROM mortgage_rates r
          JOIN lenders l ON l.id = r.lender_id
+        -- product_type and borrower_profile are ENUM columns. Comparing one to
+        -- a text parameter raises "operator does not exist:
+        -- mortgage_product_type = text", so the PARAMETER is cast to the enum
+        -- rather than the column to text -- casting the column would defeat any
+        -- index on it.
         WHERE ($1::text IS NULL OR r.lender_id = $1)
-          AND ($2::text IS NULL OR r.product_type = $2)
+          AND ($2::text IS NULL OR r.product_type = $2::mortgage_product_type)
           AND ($3::int  IS NULL OR r.term_years = $3)
-          AND ($4::text IS NULL OR r.borrower_profile = $4)
+          AND ($4::text IS NULL OR r.borrower_profile = $4::borrower_profile)
           AND l.active
         ORDER BY r.lender_id, r.product_type, r.term_years, r.borrower_profile,
                  r.effective_date DESC`,

@@ -93,7 +93,19 @@ export class PostgresMarketDataRepository implements MarketDataRepository {
       `SELECT to_char(max(period), 'YYYY-MM') AS period FROM sale_market_stats`,
     );
     const period = rows[0]?.period;
-    if (!period) throw new Error("No sale statistics on record.");
+    if (!period) {
+      // Reached when the schema exists but nothing has imported into it — the
+      // state a database is in the minute after `npm run db:migrate`. The
+      // message names the cause and the fix, because the alternative is an
+      // operator reading "No sale statistics on record" during a failed deploy
+      // and having no idea whether the database is broken or simply empty.
+      throw new Error(
+        "No sale statistics on record. The `sale_market_stats` table is empty, " +
+          "which is expected until a market-data importer has run — there is no " +
+          "such importer yet. Unset MARKET_DATA_SOURCE=postgres to serve the " +
+          "labelled demo dataset instead. See lib/data/index.ts.",
+      );
+    }
     return period;
   }
 

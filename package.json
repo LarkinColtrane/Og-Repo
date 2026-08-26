@@ -10,10 +10,14 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test \"tests/**/*.test.ts\"",
-    "test:watch": "node --import tsx --test --watch \"tests/**/*.test.ts\""
+    "test:watch": "node --import tsx --test --watch \"tests/**/*.test.ts\"",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "db:status": "tsx scripts/migrate.ts --status",
+    "test:integration": "node --import tsx --test \"tests/integration/**/*.test.ts\""
   },
   "dependencies": {
     "next": "16.3.2",
+    "pg": "^8.23.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "recharts": "3.10.1",
@@ -23,6 +27,7 @@
     "@eslint/eslintrc": "3.3.6",
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "24.10.1",
+    "@types/pg": "^8.23.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.5",
     "eslint": "9.39.5",

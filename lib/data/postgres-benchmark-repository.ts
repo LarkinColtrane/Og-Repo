@@ -92,7 +92,11 @@ export class PostgresMarketBenchmarkRepository implements MarketBenchmarkReposit
       `INSERT INTO market_benchmarks
          (series_code, observation_date, value, source, retrieved_at, data_quality)
        SELECT * FROM unnest(
-         $1::text[], $2::date[], $3::numeric[], $4::text[], $5::timestamptz[], $6::text[]
+         $1::text[], $2::date[], $3::numeric[], $4::text[], $5::timestamptz[],
+         -- Cast to the ENUM array, not text[]. PostgreSQL will not implicitly
+         -- coerce text to an enum in an INSERT ... SELECT, and the fake executor
+         -- used in unit tests could never have caught that: it does not have types.
+         $6::benchmark_data_quality[]
        )
        ON CONFLICT (series_code, observation_date) DO UPDATE
          SET value        = EXCLUDED.value,
