@@ -2,6 +2,7 @@ import { z } from "zod";
 import { BEDROOM_TYPES, PROPERTY_TYPES, TREND_RANGES } from "@/types";
 import type { Period, TrendRange } from "@/types";
 import { addMonths } from "@/lib/periods";
+import { isValidIsoDate } from "@/lib/calculations/business-days";
 import { TREND_RANGE_MONTHS } from "@/types";
 
 /**
@@ -86,6 +87,51 @@ export const mortgageCompareQuerySchema = z.object({
   occupancy: occupancySchema.default("investment"),
   units: boundedNumber(1, 12).default(1),
 });
+
+/* ── Market benchmarks ────────────────────────────────────────────────────── */
+
+export const benchmarkSeriesSchema = z.enum([
+  "5y-canada-bond",
+  "10y-canada-bond",
+  "boc-policy-rate",
+]);
+
+export const benchmarkRangeSchema = z.enum(["3m", "1y", "3y", "5y"]);
+
+export const benchmarkQuerySchema = z.object({
+  series: benchmarkSeriesSchema.default("5y-canada-bond"),
+  range: benchmarkRangeSchema.default("1y"),
+});
+
+/** `YYYY-MM-DD`, checked for a date that actually exists. */
+const isoDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a date in YYYY-MM-DD form.")
+  .refine(isValidIsoDate, "That calendar date does not exist.");
+
+/**
+ * Body accepted by the internal ingest endpoint.
+ *
+ * Either a date range or `recent`, not both — asking for both is a caller that
+ * has not decided what it wants, and guessing on their behalf is how a backfill
+ * silently becomes a five-row import.
+ */
+export const bankOfCanadaIngestSchema = z
+  .object({
+    series: benchmarkSeriesSchema.default("5y-canada-bond"),
+    startDate: isoDateSchema.optional(),
+    endDate: isoDateSchema.optional(),
+    recent: z.coerce.number().int().min(1).max(10_000).optional(),
+    triggeredBy: z.enum(["manual", "schedule", "webhook"]).default("manual"),
+  })
+  .refine(
+    (body) => !(body.recent !== undefined && (body.startDate || body.endDate)),
+    { message: "Provide either a date range or `recent`, not both." },
+  )
+  .refine(
+    (body) => !(body.startDate && body.endDate) || body.startDate <= body.endDate,
+    { message: "`startDate` must not be after `endDate`." },
+  );
 
 /** Turn `?range=3y` into a concrete `from` bound relative to the latest period. */
 export function resolveDateBounds(

@@ -2,6 +2,10 @@ import type { MarketDataRepository } from "./repository";
 import { DemoMarketDataRepository } from "./demo-repository";
 import type { MortgageRateRepository } from "./mortgage-repository";
 import { DemoMortgageRateRepository } from "./demo-mortgage-repository";
+import type { MarketBenchmarkRepository } from "./benchmark-repository";
+import { DemoMarketBenchmarkRepository } from "./demo-benchmark-repository";
+import type { ImportRunStore } from "./import-run-store";
+import { InMemoryImportRunStore } from "./import-run-store";
 
 export * from "./repository";
 export { DemoMarketDataRepository } from "./demo-repository";
@@ -11,6 +15,13 @@ export * from "./attribution";
 export * from "./mortgage-repository";
 export { DemoMortgageRateRepository } from "./demo-mortgage-repository";
 export { PostgresMortgageRateRepository } from "./postgres-mortgage-repository";
+export * from "./benchmark-repository";
+export * from "./import-run-store";
+export { DemoMarketBenchmarkRepository } from "./demo-benchmark-repository";
+export {
+  PostgresMarketBenchmarkRepository,
+  PostgresImportRunStore,
+} from "./postgres-benchmark-repository";
 
 /**
  * The one place that decides where data comes from.
@@ -77,4 +88,64 @@ export function setMortgageRateRepository(next: MortgageRateRepository): void {
 
 export function resetMortgageRateRepository(): void {
   mortgageRateRepository = null;
+}
+
+/**
+ * The one place that decides where market benchmarks come from.
+ *
+ * A third factory, matching the third repository. Benchmarks come from open
+ * government APIs on a business-daily cadence — a different source class from
+ * both monthly market statistics and commercially licensed lender rates — so it
+ * switches independently of the other two.
+ *
+ * ```ts
+ * if (process.env.DATABASE_URL) {
+ *   return new PostgresMarketBenchmarkRepository(executeSql);
+ * }
+ * ```
+ *
+ * Until a database is connected this returns the read-only demo series, which
+ * **refuses writes**: an ingest against it fails loudly rather than appearing to
+ * succeed into memory that vanishes on restart.
+ */
+let benchmarkRepository: MarketBenchmarkRepository | null = null;
+
+export function getBenchmarkRepository(): MarketBenchmarkRepository {
+  if (!benchmarkRepository) {
+    benchmarkRepository = new DemoMarketBenchmarkRepository();
+  }
+  return benchmarkRepository;
+}
+
+export function setBenchmarkRepository(next: MarketBenchmarkRepository): void {
+  benchmarkRepository = next;
+}
+
+export function resetBenchmarkRepository(): void {
+  benchmarkRepository = null;
+}
+
+/**
+ * The import-run audit trail.
+ *
+ * One store serves every pipeline — benchmarks now, market statistics and rates
+ * when those land. In-memory until a database exists, and the diagnostics
+ * endpoint says so rather than letting an audit trail that evaporates on restart
+ * pass for one that does not.
+ */
+let importRunStore: ImportRunStore | null = null;
+
+export function getImportRunStore(): ImportRunStore {
+  if (!importRunStore) {
+    importRunStore = new InMemoryImportRunStore();
+  }
+  return importRunStore;
+}
+
+export function setImportRunStore(next: ImportRunStore): void {
+  importRunStore = next;
+}
+
+export function resetImportRunStore(): void {
+  importRunStore = null;
 }

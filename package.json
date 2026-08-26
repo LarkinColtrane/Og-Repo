@@ -2,13 +2,15 @@
   "name": "montreal-market-intelligence",
   "version": "0.1.0",
   "private": true,
-  "description": "Montreal Residential Market Intelligence — a data platform for understanding the Montreal housing market.",
+  "description": "Montreal Residential Market Intelligence \u2014 a data platform for understanding the Montreal housing market.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test \"tests/**/*.test.ts\"",
+    "test:watch": "node --import tsx --test --watch \"tests/**/*.test.ts\""
   },
   "dependencies": {
     "next": "16.3.2",
@@ -26,6 +28,7 @@
     "eslint": "9.39.5",
     "eslint-config-next": "16.3.2",
     "tailwindcss": "4.3.3",
+    "tsx": "^4.23.12",
     "typescript": "5.9.3"
   }
 }

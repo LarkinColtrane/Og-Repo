@@ -354,6 +354,47 @@ export const en = {
     perMonth: "/mo",
   },
 
+  benchmark: {
+    sectionTitle: "Government of Canada 5-year bond yield",
+    subtitle:
+      "The wholesale rate lenders fund 5-year fixed mortgages against. Published by the Bank of Canada each business day.",
+    latestLabel: "Latest yield",
+    observationDateLabel: "Observation date",
+    changeLabel: "Change from previous business day",
+    chartTitle: "Yield history",
+    spreadTitle: "Spread over the 5-year bond",
+    spreadLabel: "Spread",
+    mortgageRateLabel: "Mortgage rate",
+    bondYieldLabel: "5Y bond yield",
+    notAMortgageRate: "This is not a mortgage rate",
+    notAMortgageRateBody:
+      "A government bond yield is what lenders pay to borrow, not what they charge. Fixed mortgage pricing moves with this benchmark, but the relationship is not one-to-one: the gap between them widens and narrows with credit conditions, competition and each lender's own funding mix. No borrower is offered this rate.",
+    variableNote:
+      "Variable-rate products are priced off prime, which follows the Bank of Canada's policy rate rather than the 5-year bond. No spread is shown for them, because subtracting one from the other would not mean anything.",
+    freshness: {
+      live: "Live",
+      stale: "Stale",
+      demo: "Demo data",
+      unavailable: "No data",
+    },
+    freshnessDetail: {
+      live: "Imported from the Bank of Canada and current with its publication schedule.",
+      stale: "Real data, but older than the Bank of Canada's publication schedule can explain. The import pipeline may have stopped.",
+      demo: "A generated stand-in, not a Bank of Canada figure. Connect a database and run an import to replace it.",
+      unavailable: "No observations on record for this series.",
+    },
+    lastImportLabel: "Last successful import",
+    lastFailureLabel: "Last failed import",
+    neverImported: "Never — showing generated fallback data",
+    businessDayLag: "{lag} business day(s) behind",
+    sourceLine: "Bank of Canada Valet API · series {code}",
+    sourceLabelLive: "Source",
+    // When the fallback is showing, the Bank of Canada is where the data *will*
+    // come from, not where it came from. Labelling it "Source" would credit them
+    // for numbers this application generated.
+    sourceLabelDemo: "Configured source (not yet imported)",
+  },
+
   comparePage: {
     title: "Compare neighbourhoods",
     subtitle: "Put up to four areas side by side on the measures that matter.",

@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import type { Lender, MortgageRate } from "@/types/mortgage";
+import type { BenchmarkSeriesPayload } from "@/types/benchmark";
 import { copy } from "@/lib/i18n";
 import { formatPercent } from "@/lib/calculations/format";
 import { api } from "@/lib/api/client";
@@ -21,6 +22,7 @@ import { LenderComparisonPanel } from "./lender-comparison";
 import { FinancingMatrixPanel } from "./financing-matrix";
 import { InvestmentResults } from "./investment-results";
 import { RateDataNotice } from "./rate-badge";
+import { BenchmarkPanel } from "./benchmark-panel";
 import {
   createFormState,
   DOWN_PAYMENT_PRESETS,
@@ -94,6 +96,18 @@ export function FinancingWorkspace({
   const ratesResource = useApiResource<MortgageRate[]>(
     `mortgage:rates:${form.productType}:${form.termYears}`,
     ratesFetcher,
+  );
+
+  // The latest benchmark, fetched once for the spread column. The panel below
+  // fetches its own history because its range control changes independently —
+  // this request only needs the newest observation.
+  const benchmarkResource = useApiResource<BenchmarkSeriesPayload>(
+    "benchmark:5y:latest",
+    useCallback(
+      (signal: AbortSignal) =>
+        api.benchmark({ series: "5y-canada-bond", range: "3m" }, signal),
+      [],
+    ),
   );
 
   const lenders = useMemo(() => lendersResource.data ?? [], [lendersResource.data]);
@@ -265,6 +279,7 @@ export function FinancingWorkspace({
               }}
               selectedLenderId={activeLenderId}
               onSelectLender={setSelectedLenderId}
+              benchmark={benchmarkResource.data?.snapshot.latest ?? null}
             />
           ) : null}
 
@@ -274,6 +289,8 @@ export function FinancingWorkspace({
               selectedPercent={form.downPaymentPercent}
             />
           ) : null}
+
+          <BenchmarkPanel />
 
           {analysis && analysis.financing.eligibility.eligible ? (
             <InvestmentResults

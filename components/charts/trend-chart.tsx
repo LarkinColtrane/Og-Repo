@@ -76,6 +76,8 @@ export function TrendChart({
   height = CHART_SPEC.height,
   emptyMessage,
   className,
+  formatAxisLabel = formatTick,
+  formatPointLabel = (key: string) => formatPeriod(key),
 }: {
   title: string;
   description?: ReactNode;
@@ -88,6 +90,16 @@ export function TrendChart({
   height?: number;
   emptyMessage?: string;
   className?: string;
+  /**
+   * How to label an axis tick. Defaults to the monthly `YYYY-MM` treatment.
+   *
+   * Supplied by the daily benchmark chart, whose keys are `YYYY-MM-DD` and would
+   * otherwise be handed to a month parser that rejects them. Making the key
+   * opaque to this component is what lets one chart serve both cadences.
+   */
+  formatAxisLabel?: (key: string) => string;
+  /** How to label a point in the tooltip and the table. Defaults to monthly. */
+  formatPointLabel?: (key: string) => string;
 }) {
   const theme = useResolvedTheme();
   const palette = getChartPalette(theme);
@@ -129,7 +141,13 @@ export function TrendChart({
         ) : !mounted ? (
           <ChartSkeleton height={height} />
         ) : view === "table" ? (
-          <SeriesTable series={series} data={data} unit={unit} colours={colours} />
+          <SeriesTable
+            series={series}
+            data={data}
+            unit={unit}
+            colours={colours}
+            formatPointLabel={formatPointLabel}
+          />
         ) : (
           <>
             {series.length > 1 ? (
@@ -155,7 +173,7 @@ export function TrendChart({
                   />
                   <XAxis
                     dataKey="period"
-                    tickFormatter={formatTick}
+                    tickFormatter={formatAxisLabel}
                     tickLine={false}
                     axisLine={{ stroke: palette.axis }}
                     tick={{ fill: palette.tickText, fontSize: 11 }}
@@ -174,7 +192,12 @@ export function TrendChart({
                   <Tooltip
                     cursor={{ stroke: palette.crosshair, strokeWidth: 1 }}
                     content={
-                      <TrendTooltip series={series} colours={colours} unit={unit} />
+                      <TrendTooltip
+                        series={series}
+                        colours={colours}
+                        unit={unit}
+                        formatPointLabel={formatPointLabel}
+                      />
                     }
                   />
                   {series.map((entry, index) => (
@@ -273,6 +296,7 @@ function TrendTooltip({
   series,
   colours,
   unit,
+  formatPointLabel,
 }: {
   active?: boolean;
   payload?: TooltipPayloadEntry[];
@@ -280,13 +304,14 @@ function TrendTooltip({
   series: TrendSeriesConfig[];
   colours: string[];
   unit: ChartUnit;
+  formatPointLabel: (key: string) => string;
 }) {
   if (!active || !payload || payload.length === 0 || !label) return null;
 
   return (
     <div className="rounded-md border border-line bg-surface px-3 py-2 shadow-raised">
       <p className="mb-1.5 text-[0.6875rem] font-semibold tracking-[0.04em] text-ink-muted uppercase">
-        {formatPeriod(label)}
+        {formatPointLabel(label)}
       </p>
       <ul className="space-y-1">
         {series.map((entry, index) => {
@@ -350,11 +375,13 @@ function SeriesTable({
   data,
   unit,
   colours,
+  formatPointLabel,
 }: {
   series: TrendSeriesConfig[];
   data: TrendChartRow[];
   unit: ChartUnit;
   colours: string[];
+  formatPointLabel: (key: string) => string;
 }) {
   // Newest first: the recent end of a series is what a reader scans for.
   const rows = [...data].reverse();
@@ -382,7 +409,7 @@ function SeriesTable({
         <tbody>
           {rows.map((row) => (
             <tr key={row.period}>
-              <Td sticky>{formatPeriod(row.period)}</Td>
+              <Td sticky>{formatPointLabel(row.period)}</Td>
               {series.map((entry) => (
                 <Td key={entry.key} numeric>
                   {formatChartValue(row[entry.key] as number | null, unit)}

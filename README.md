@@ -56,7 +56,7 @@ and what does it mean for me?"*
 | `/rent` | Rent by unit size, vacancy, history, and comparison against the Montréal average. |
 | `/buy` | Prices, inventory and pace by property type, plus a mortgage and affordability calculator. |
 | `/sell` | Seller-side indicators and an explanation of what each one does and does not tell you. |
-| `/invest` | Financing and returns: down-payment scenarios, a seven-lender comparison, a lender × down-payment matrix, and the full investment analysis. |
+| `/invest` | Financing and returns: down-payment scenarios, a seven-lender comparison, a lender × down-payment matrix, the Government of Canada 5-year bond yield with its mortgage spread, and the full investment analysis. |
 | `/compare` | Up to four neighbourhoods side by side. |
 | `/property-analyzer` | Address-level analysis — designed, documented, and deliberately not implemented. |
 | `/data-sources` | What is connected, what is planned, and under what licence. |
@@ -65,7 +65,7 @@ Everything works: navigation, neighbourhood selection, filters, charts, period
 selectors, the comparison tool, both calculators, and the API behind them. There
 are no decorative buttons.
 
-### Three things it refuses to do
+### Four things it refuses to do
 
 These constraints shaped much of the code, so they are worth stating plainly.
 
@@ -81,6 +81,12 @@ measured inputs, published weights, and the working shown on screen. The prose
 summary on each dashboard is generated from the same numbers
 ([`summary.ts`](./lib/calculations/summary.ts)), so it cannot drift away from
 them. There is no hand-written copy claiming a neighbourhood is hot.
+
+**It does not present a bond yield as a mortgage rate.** The Government of
+Canada 5-year yield on the investor page is what lenders pay to borrow, not what
+they charge — the page says so, the database says so in a table comment, and the
+two data streams share no storage. The spread between them is derived on render,
+never stored. See [`docs/BANK_OF_CANADA.md`](./docs/BANK_OF_CANADA.md).
 
 **It does not draw a map it does not have.** With no boundary dataset connected,
 the market map renders a labelled schematic grid and says what it is. The GeoJSON
@@ -100,7 +106,8 @@ boundary file and it draws real outlines.
 | **Tailwind CSS v4** | Design tokens as CSS custom properties in [`app/globals.css`](./app/globals.css). |
 | **Recharts** | Line and bar charts. |
 | **Zod** | Query-parameter validation at the API boundary, and the intended validation layer for imports. |
-| **PostgreSQL** | Not connected yet. Schema in [`docs/sql/`](./docs/sql), repository implementation written. |
+| **PostgreSQL** | Not connected yet. Schema in [`docs/sql/`](./docs/sql), repository implementations written. |
+| **node:test + tsx** | The test suite. No framework beyond what Node ships with. |
 
 No component library. The UI primitives in [`components/ui/`](./components/ui)
 are about 600 lines total and are easier to read than a dependency's
@@ -116,6 +123,8 @@ app/                          Routes (Next.js App Router)
 │   ├── market/montreal/      GET city-wide roll-up
 │   ├── neighbourhoods/       GET list, [slug], [slug]/rent, [slug]/sales
 │   ├── mortgage/             GET lenders, rates, compare
+│   ├── market/benchmarks/    GET bond yield history + freshness
+│   ├── internal/market-data/ POST ingest · GET pipeline diagnostics
 │   ├── compare/              GET side-by-side comparison
 │   └── data-sources/         GET provenance registry
 ├── (routes)/                 rent · buy · sell · invest · compare · neighbourhoods
@@ -143,9 +152,18 @@ lib/
 │   ├── mortgage-repository.ts   ⭐ The MortgageRateRepository interface
 │   ├── demo-mortgage-repository.ts     Backed by the generated rate table
 │   ├── postgres-mortgage-repository.ts Backed by SQL (written, not wired up)
-│   └── index.ts              getRepository() + getMortgageRateRepository()
+│   ├── benchmark-repository.ts ⭐ The MarketBenchmarkRepository interface
+│   ├── demo-benchmark-repository.ts    Generated fallback, refuses writes
+│   ├── postgres-benchmark-repository.ts Backed by SQL (written, not wired up)
+│   ├── import-run-store.ts   The ingestion audit trail
+│   └── index.ts              Three repository factories, one per source class
+├── pipeline/                 ⭐ Ingestion: connector → transform → validate → ingest
+│   ├── connectors/bank-of-canada/  Valet API client + series registry
+│   ├── transforms/           External shapes → our canonical model
+│   ├── validate.ts           Zod schemas + the unit-anomaly check
+│   └── ingest/               Orchestration; always records an import run
 ├── calculations/             Mortgage, financing, investment, market condition,
-│                            aggregation, formatting — all pure functions
+│                            benchmarks, business days — all pure functions
 ├── hooks/                    useApiResource, useResolvedTheme, useIsClient
 ├── i18n/                     Dictionaries and the merge/fallback mechanism
 └── periods.ts                Month arithmetic
@@ -154,11 +172,14 @@ data/demo/                    The generated dataset
 ├── neighbourhood-profiles.ts Seed table — the only hand-written numbers
 ├── generate.ts               Deterministic history generator
 ├── lenders.ts                Lenders + deterministic demo rate generator
+├── benchmarks.ts             Generated bond-yield fallback (business days only)
 └── sources.ts                Data source registry
 
 types/                        Shared TypeScript contracts
+tests/                        node:test suites — connector, transform, validate,
+                              persistence, ingest, calculations, API
 docs/                         DATA_PIPELINE.md · MORTGAGE_RATE_PIPELINE.md
-                              DATABASE_SCHEMA.md · sql/
+                              BANK_OF_CANADA.md · DATABASE_SCHEMA.md · sql/
 ```
 
 ---
@@ -186,6 +207,7 @@ npm run build      # production build
 npm run start      # serve the production build
 npm run lint       # ESLint
 npm run typecheck  # tsc --noEmit
+npm test           # node:test — connector, pipeline, calculations, API
 ```
 
 Try the API directly — it is the same data the pages use:
@@ -197,6 +219,8 @@ curl "localhost:3000/api/neighbourhoods/verdun/rent?bedroomType=twoBedroom&range
 curl "localhost:3000/api/compare?slugs=plateau-mont-royal,verdun,villeray"
 curl "localhost:3000/api/mortgage/rates?productType=fixed&termYears=5"
 curl "localhost:3000/api/mortgage/compare?price=725000&downPaymentPercent=20&occupancy=investment&units=3"
+curl "localhost:3000/api/market/benchmarks?series=5y-canada-bond&range=1y"
+curl "localhost:3000/api/internal/market-data/status"
 ```
 
 ---
@@ -268,6 +292,9 @@ Errors use `{ "error": { "code", "message" } }` with a matching HTTP status.
 | `GET /api/mortgage/lenders` | — |
 | `GET /api/mortgage/rates` | `productType`, `termYears`, `lenderId`, `borrowerProfile` |
 | `GET /api/mortgage/compare` | `price`, `downPaymentPercent`, `occupancy`, `units`, `termYears`, `amortizationYears`, `productType` |
+| `GET /api/market/benchmarks` | `series` (`5y-canada-bond`), `range` (`3m`/`1y`/`3y`/`5y`) |
+| `POST /api/internal/market-data/bank-of-canada` | Body: `series`, and either `startDate`+`endDate` or `recent` |
+| `GET /api/internal/market-data/status` | — (pipeline diagnostics) |
 
 Query strings are validated with Zod in
 [`lib/api/params.ts`](./lib/api/params.ts) before reaching the data layer, so a

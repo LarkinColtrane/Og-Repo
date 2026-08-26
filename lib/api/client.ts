@@ -1,4 +1,5 @@
 import type { Lender, MortgageRate } from "@/types/mortgage";
+import type { BenchmarkSeriesPayload } from "@/types/benchmark";
 import type {
   ApiErrorBody,
   ApiErrorCode,
@@ -110,4 +111,17 @@ export const api = {
     params: { productType?: string; termYears?: number; lenderId?: string } = {},
     signal?: AbortSignal,
   ) => fetchApi<MortgageRate[]>(`/api/mortgage/rates${query(params)}`, signal),
+
+  /**
+   * A market benchmark series with its history and freshness.
+   *
+   * The browser never calls the Bank of Canada directly: the request goes to our
+   * own endpoint, which reads what the ingest pipeline stored. That keeps the
+   * upstream contacted once per import rather than once per visitor, and keeps
+   * the page working when the publisher is down.
+   */
+  benchmark: (
+    params: { series?: string; range?: string } = {},
+    signal?: AbortSignal,
+  ) => fetchApi<BenchmarkSeriesPayload>(`/api/market/benchmarks${query(params)}`, signal),
 };

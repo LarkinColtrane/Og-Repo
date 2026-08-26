@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import type { LenderComparison } from "@/lib/calculations/financing";
+import type { LenderComparison, LenderFinancing } from "@/lib/calculations/financing";
+import type { BenchmarkObservation } from "@/types/benchmark";
+import { calculateMortgageSpread } from "@/lib/calculations/benchmark";
 import { copy, interpolate } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { formatCurrency, formatPercent, formatRate } from "@/lib/calculations/format";
@@ -26,16 +28,35 @@ export function LenderComparisonPanel({
   scenarioSummary,
   selectedLenderId,
   onSelectLender,
+  benchmark,
 }: {
   comparison: LenderComparison;
   /** Price / down payment / base mortgage line shown above the list. */
   scenarioSummary: { price: number; downPaymentPercent: number; baseMortgage: number };
   selectedLenderId: string | null;
   onSelectLender: (lenderId: string) => void;
+  /**
+   * The latest 5-year Government of Canada bond yield, when one is on record.
+   *
+   * Optional: the comparison works without it, and a missing benchmark shows no
+   * spread rather than a placeholder. The spread is derived on render and never
+   * stored — it is the difference between two numbers that both already exist.
+   */
+  benchmark?: BenchmarkObservation | null;
 }) {
   const [openLenderId, setOpenLenderId] = useState<string | null>(null);
 
   const eligible = comparison.lenders.filter((row) => row.scenario.eligibility.eligible);
+
+  // Derived on render, never stored: the spread is the difference between two
+  // numbers the page already has, and persisting it would be a third value to
+  // keep in step with both.
+  const spreadFor = (row: LenderFinancing) =>
+    calculateMortgageSpread({
+      rate: row.rate,
+      benchmark: benchmark ?? null,
+      benchmarkTermYears: 5,
+    });
 
   return (
     <Card>
@@ -72,6 +93,7 @@ export function LenderComparisonPanel({
                 const open = openLenderId === row.lender.id;
                 const selected = selectedLenderId === row.lender.id;
                 const isEligible = row.scenario.eligibility.eligible;
+                const spread = spreadFor(row);
 
                 return (
                   <li key={row.lender.id} className="py-3">
@@ -110,11 +132,34 @@ export function LenderComparisonPanel({
                             : ", conventional pricing"}
                         </p>
 
-                        <RateQualityBadge
-                          className="mt-1"
-                          quality={row.rate.dataQuality}
-                          effectiveDate={row.rate.effectiveDate}
-                        />
+                        {/* The spread and the provenance badge share a row with
+                            an explicit gap. Left as adjacent inline elements they
+                            butt together, and "1.67%●Demo rate" reads as one
+                            token. */}
+                        <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                          {/* Only appears for a 5-year fixed product. A variable
+                              rate tracks prime, not the bond curve, so the
+                              calculation returns null and nothing is drawn. */}
+                          {spread ? (
+                            <span className="inline-flex flex-wrap items-baseline gap-x-1.5 text-[0.75rem] text-ink-muted">
+                              <span>{copy.benchmark.bondYieldLabel}</span>
+                              <span className="tabular">
+                                {formatRate(spread.benchmarkValue)}
+                              </span>
+                              <span aria-hidden="true">·</span>
+                              <span>{copy.benchmark.spreadLabel}</span>
+                              <span className="font-semibold tabular text-ink-secondary">
+                                {formatRate(spread.spread)}
+                              </span>
+                            </span>
+                          ) : null}
+
+                          <RateQualityBadge
+                            quality={row.rate.dataQuality}
+                            effectiveDate={row.rate.effectiveDate}
+                          />
+                        </div>
+
                       </div>
 
                       <div className="flex items-center justify-between gap-3 sm:justify-end">
@@ -193,6 +238,11 @@ export function LenderComparisonPanel({
                 </span>{" "}
                 {copy.financing.notBestBank}
               </p>
+              {benchmark && comparison.lenders.some((row) => row.rate.productType !== "fixed") ? (
+                <p className="text-[0.75rem] leading-relaxed text-ink-muted">
+                  {copy.benchmark.variableNote}
+                </p>
+              ) : null}
             </div>
           </>
         )}

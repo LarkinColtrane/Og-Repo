@@ -142,11 +142,26 @@ export const DATA_SOURCES: DataSource[] = [
     name: "Bank of Canada Valet API",
     sourceType: "government",
     url: "https://www.bankofcanada.ca/valet/docs",
+    // Set by a successful import run; null until one has happened in this
+    // deployment. The connector and pipeline are built — see
+    // docs/BANK_OF_CANADA.md — and this flips the moment one succeeds.
     lastUpdated: null,
-    status: "planned",
+    status: "active",
     licence: "Bank of Canada terms of use — open, attribution required",
     description:
-      "Policy rate, conventional mortgage benchmarks and bond yields. Free, keyless and well documented — the best first API to practise on, and the series that explains why lender rates move.",
+      "Government of Canada benchmark bond yields, the policy rate and conventional mortgage benchmarks. Free, keyless and documented. The 5-year bond yield is ingested as a market benchmark — it is what lenders fund 5-year fixed mortgages against, and it is not itself a mortgage rate.",
+    refreshCadence: "daily",
+  },
+  {
+    id: "src-demo-benchmarks",
+    name: "Demo market benchmarks",
+    sourceType: "demo",
+    url: "/docs/BANK_OF_CANADA.md",
+    lastUpdated: null,
+    status: "active",
+    licence: null,
+    description:
+      "A generated stand-in for the Government of Canada bond yield series, used when no database is connected. Deliberately attributed to itself rather than to the Bank of Canada — these numbers were never published by anyone.",
     refreshCadence: "daily",
   },
   {
